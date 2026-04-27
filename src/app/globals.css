@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Audre brand tokens (aligned to DLB Creative palette) */
+  --color-navy: #25394B;        /* deep navy */
+  --color-accent: #00BCC8;      /* teal */
+  --color-gold: #DDA032;        /* gold accent */
+  --color-purple: #8C6E9E;      /* secondary purple */
+  --color-soft: #F7F7F7;        /* soft light background */
+  --color-accent-foreground: #ffffff;
+  --color-muted: #e5e7eb;       /* zinc-200-ish */
+  --font-sans: var(--font-poppins);
+  --font-heading: var(--font-poppins);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--color-soft);
+  color: var(--foreground);
+  font-family: var(--font-poppins), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+@keyframes slide-in-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-in.slide-in-from-right {
+  animation: slide-in-from-right 0.25s ease-out;
+}
