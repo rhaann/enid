@@ -580,7 +580,7 @@ function DetailPanel({
                   See Audit
                 </button>
               )}
-              {!isDone && !isFailed && (
+              {audit.status === "not_started" && (
                 <button
                   type="button"
                   onClick={handleRunAudit}

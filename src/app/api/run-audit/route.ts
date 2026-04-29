@@ -1,64 +1,63 @@
 export const dynamic = "force-dynamic";
 
+import { after } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/supabase/auth";
 
 export async function POST(req: Request) {
-  // Only admin can trigger audits
   const admin = await requireAdmin();
   if (!admin) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const webhookUrl = process.env.N8N_WORKFLOW_URL;
-  if (!webhookUrl) {
-    return Response.json({ error: "N8N_WORKFLOW_URL is not configured." }, { status: 500 });
+  const body = await req.json().catch(() => null);
+  const auditId = body?.id;
+
+  if (!auditId) {
+    return Response.json({ error: "Audit ID is required." }, { status: 400 });
   }
 
-  try {
-    const body = await req.json().catch(() => null);
-    const auditId = body?.id;
+  const { data: audit, error: fetchError } = await supabase()
+    .from("dlb_audit_inputs")
+    .select("id, status")
+    .eq("id", auditId)
+    .single();
 
-    if (!auditId) {
-      return Response.json({ error: "Audit ID is required." }, { status: 400 });
-    }
-
-    // Verify the audit exists in the database
-    const { data: audit, error: fetchError } = await supabase()
-      .from("dlb_audit_inputs")
-      .select("id")
-      .eq("id", auditId)
-      .single();
-
-    if (fetchError || !audit) {
-      return Response.json({ error: "Audit not found." }, { status: 404 });
-    }
-
-    console.log(`[run-audit] Triggering n8n workflow for audit ${auditId}`);
-
-    // Fire the main n8n webhook with just the audit ID.
-    // n8n looks up the audit data from the DB, determines the tier,
-    // and decides which sub-workflows to run (eval, social, competitor).
-    // Workflow progress is tracked in the workflow_runs table.
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: auditId }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      console.error(`[run-audit] n8n trigger failed: ${res.status} ${text}`);
-      return Response.json({ error: "Failed to trigger audit workflow." }, { status: 500 });
-    }
-
-    // Return immediately — the client will poll /api/run-audit/status/[id]
-    // to track per-workflow progress until all workflows are done.
-    console.log(`[run-audit] n8n workflow triggered for audit ${auditId}`);
-    return Response.json({ success: true });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Something went wrong.";
-    console.error("[run-audit] Error:", msg);
-    return Response.json({ error: msg }, { status: 500 });
+  if (fetchError || !audit) {
+    return Response.json({ error: "Audit not found." }, { status: 404 });
   }
+
+  // Only allow running when the audit has not been started yet (status is null).
+  // Once started, the user must reset it before running again.
+  if (audit.status !== null) {
+    return Response.json(
+      { error: "This audit has already been started. Reset it first to run again." },
+      { status: 409 }
+    );
+  }
+
+  // Derive the base URL from the incoming request so this works in both
+  // local dev and production without needing a NEXT_PUBLIC_APP_URL env var.
+  const host = req.headers.get("host") ?? "localhost:3000";
+  const proto = req.headers.get("x-forwarded-proto") ?? "http";
+  const appUrl = `${proto}://${host}`;
+
+  // Fire the evaluator agent AFTER this response is sent so the browser
+  // gets an immediate acknowledgement while the agent runs in the background.
+  after(async () => {
+    try {
+      await fetch(`${appUrl}/api/evaluator_agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
+        },
+        body: JSON.stringify({ audit_input_id: auditId }),
+      });
+    } catch (err) {
+      console.error("[run-audit] Failed to trigger evaluator agent:", err);
+    }
+  });
+
+  return Response.json({ success: true });
 }
