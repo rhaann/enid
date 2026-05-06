@@ -12,20 +12,17 @@ export function Logo({ className, withLink = true, height = 36 }: LogoProps) {
   const content = (
     <span className={["inline-flex items-center gap-2 select-none", className].filter(Boolean).join(" ")}>
       <Image
-        src="/Audre_Logo.gif"
-        alt="Audre"
+        src="/Enid_Wordmark_Full_Color.png"
+        alt="Enid"
         height={height}
-        width={height }
+        width={height * 4}
         priority
       />
-      <span className="text-accent font-semibold text-2xl sm:text-3xl md:text-4xl leading-none">
-        Audre
-      </span>
     </span>
   );
   if (!withLink) return content;
   return (
-    <Link href="/" aria-label="Audre home">
+    <Link href="/" aria-label="Enid home">
       {content}
     </Link>
   );

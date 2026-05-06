@@ -11,10 +11,10 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Audre — Free Brand Audit",
-  description: "Discover your brand’s hidden potential with Audre by DLB Creative.",
+  title: "Enid — Free Brand Audit",
+  description: "Discover your brand’s hidden potential with Enid by DLB Creative.",
   icons: {
-    icon: "/Audre_Logo.png",
+    icon: "/N_Logo.png",
   },
 };
 
@@ -32,7 +32,7 @@ export default function RootLayout({
         {children}
         <footer className="w-full bg-white border-t border-zinc-200">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6 text-sm text-zinc-600">
-            <span>© {new Date().getFullYear()} Audre</span>
+            <span>© {new Date().getFullYear()} Enid</span>
             <span className="text-zinc-400">Brand & Website Audit</span>
           </div>
         </footer>

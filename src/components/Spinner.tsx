@@ -20,7 +20,7 @@ export function Spinner({ size = 24, className, variant = "ring" }: SpinnerProps
         transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
         aria-label="Loading"
       >
-        <Image src="/Audre_Logo.png" alt="Loading" width={px} height={px} priority />
+        <Image src="/N_Logo.png" alt="Loading" width={px} height={px} priority />
       </motion.div>
     );
   }
@@ -29,7 +29,7 @@ export function Spinner({ size = 24, className, variant = "ring" }: SpinnerProps
     return (
       <span className={["inline-flex items-center", className].join(" ")}>
         <Image
-          src="/Audre_Logo.gif"
+          src="/N_Logo.png"
           alt="Loading"
           width={s}
           height={s}

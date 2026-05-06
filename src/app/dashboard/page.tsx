@@ -1405,7 +1405,7 @@ export default function DashboardPage() {
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
           {/* Title */}
           <div className="mb-8">
-            <h1 className="text-2xl font-semibold text-zinc-900">Audre Audit Queue</h1>
+            <h1 className="text-2xl font-semibold text-zinc-900">Enid Audit Queue</h1>
             <p className="mt-1 text-sm text-zinc-500">
               {audits.length} total request{audits.length !== 1 ? "s" : ""}
             </p>

@@ -77,7 +77,7 @@ export function UserMenu() {
           className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition"
           aria-label="User menu"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8C2085] text-xs font-bold text-white">
             {initials}
           </span>
           <span className="hidden sm:inline max-w-[120px] truncate">

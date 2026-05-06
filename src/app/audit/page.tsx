@@ -30,13 +30,13 @@ export default function AuditOverviewNoId() {
           </h1>
           <div className="flex items-center justify-center gap-2 mb-3">
             <span className="text-lg sm:text-xl text-zinc-700">
-              Your Brand, Website, Social Media & Competitor Audit, guided by Audre
+              Your Brand, Website, Social Media & Competitor Audit, guided by
             </span>
             <Image
-              src="/Audre_Logo.png"
-              alt="Audre"
-              height={28}
-              width={28}
+              src="/Enid_Wordmark_Full_Color.png"
+              alt="Enid"
+              height={24}
+              width={96}
               priority
             />
           </div>

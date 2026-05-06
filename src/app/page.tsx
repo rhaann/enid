@@ -25,7 +25,7 @@ export default function Home() {
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-balance text-lg leading-8 text-white/75">
               Benchmark where you are, what&apos;s working, and what to fix first.
-              Audre gives you a clear score and roadmap so you can grow with
+              Enid gives you a clear score and roadmap so you can grow with
               confidence.
             </p>
             <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">

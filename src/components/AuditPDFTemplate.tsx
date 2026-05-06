@@ -322,9 +322,9 @@ const CoverPage = ({ companyName, createdAt }: { companyName: string; createdAt?
   <Page size="A4" style={[styles.page, { justifyContent: "space-between" }]}>
     {/* Header with logo and title */}
     <View style={{ alignItems: "center", flex: 1, justifyContent: "center" }}>
-      <Image src="/Audre_Logo.png" style={{ width: 160, marginBottom: 20 }} />
+      <Image src="/Enid_Wordmark_Full_Color.png" style={{ width: 160, marginBottom: 20 }} />
       <Text style={styles.coverTitle}>{companyName}</Text>
-      <Text style={styles.coverSubtitle}>Company Audit by Audre</Text>
+      <Text style={styles.coverSubtitle}>Company Audit by Enid</Text>
       {createdAt && (
         <Text style={{ fontSize: 12, color: colors.grey, marginTop: 8 }}>
           {new Date(createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
@@ -1112,7 +1112,7 @@ export async function generateAuditPDF(audit: AuditReport): Promise<void> {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${audit.companyName} Audit by Audre.pdf`;
+  link.download = `${audit.companyName} Audit by Enid.pdf`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

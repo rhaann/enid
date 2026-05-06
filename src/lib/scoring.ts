@@ -125,19 +125,22 @@ export const SCORE_LEGEND: readonly LegendCard[] = (() => {
   };
   for (const band of SCORE_BANDS) groups[band.legendGroup].push(band);
 
-  const meta: Record<LegendGroupId, { title: string; description: string }> = {
+  const meta: Record<LegendGroupId, { title: string; starsRange: string; description: string }> = {
     needsAttention: {
       title: "Needs Attention",
+      starsRange: "0-2 stars",
       description:
         "Critical gaps requiring immediate action. These areas may be impacting business performance.",
     },
     goodProgress: {
       title: "Good Progress",
+      starsRange: "3-4 stars",
       description:
         "Solid foundation with room for optimization. Strategic improvements can unlock significant value.",
     },
     excellence: {
       title: "Excellence",
+      starsRange: "5 stars",
       description:
         "Best-in-class performance. Maintain momentum and explore innovation opportunities.",
     },
@@ -145,17 +148,13 @@ export const SCORE_LEGEND: readonly LegendCard[] = (() => {
 
   return (Object.keys(groups) as LegendGroupId[]).map((id) => {
     const bands = groups[id];
-    const minStars = Math.min(...bands.map((b) => b.stars));
     const maxStars = Math.max(...bands.map((b) => b.stars));
     const minScore = Math.min(...bands.map((b) => b.minScore));
-    const maxScore = Math.max(...bands.map((b) => Math.min(100, b.maxScore - 1)));
+    const maxScore = Math.max(...bands.map((b) => Math.min(100, b.maxScore)));
     return {
       id,
       title: meta[id].title,
-      starsRange:
-        minStars === maxStars
-          ? `${minStars} ${minStars === 1 ? "star" : "stars"}`
-          : `${minStars}-${maxStars} stars`,
+      starsRange: meta[id].starsRange,
       scoreRange: `${minScore}-${maxScore}`,
       filledStars: maxStars,
       color: bands[0].color,
@@ -180,7 +179,7 @@ export type HealthBarSegment = {
 export const HEALTH_BAR_SEGMENTS: readonly HealthBarSegment[] = SCORE_BANDS.map(
   (band) => ({
     label: band.label,
-    scoreRange: `${band.minScore}-${Math.min(100, band.maxScore - 1)}`,
+    scoreRange: `${band.minScore}-${Math.min(100, band.maxScore)}`,
     weight: (Math.min(100, band.maxScore) - band.minScore) / 100,
     color: band.color,
   })

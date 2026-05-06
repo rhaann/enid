@@ -60,7 +60,7 @@ export default function SignInPage() {
             Welcome back
           </h1>
           <p className="text-sm text-zinc-500 text-center mb-8">
-            Sign in to your Audre account
+            Sign in to your Enid account
           </p>
 
           {error && (
