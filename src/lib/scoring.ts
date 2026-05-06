@@ -10,6 +10,7 @@
 export const SCORE_COLORS = {
   red: "#c96858",
   orange: "#d4a248",
+  yellow: "#e8c040",
   green: "#57a587",
 } as const;
 
@@ -58,7 +59,7 @@ export const SCORE_BANDS: readonly ScoreBand[] = [
     maxScore: 80,
     stars: 3,
     label: "Competitive",
-    color: SCORE_COLORS.orange,
+    color: SCORE_COLORS.yellow,
     legendGroup: "goodProgress",
   },
   {
@@ -66,7 +67,7 @@ export const SCORE_BANDS: readonly ScoreBand[] = [
     maxScore: 90,
     stars: 4,
     label: "Strong",
-    color: SCORE_COLORS.orange,
+    color: SCORE_COLORS.yellow,
     legendGroup: "goodProgress",
   },
   {

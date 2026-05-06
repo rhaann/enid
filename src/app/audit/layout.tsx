@@ -172,9 +172,9 @@ function AuditContent({ children }: { children: ReactNode }) {
                 ))}
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-5 gap-2 text-center text-sm">
+            <div className="mt-3 flex text-center text-sm">
               {HEALTH_BAR_SEGMENTS.map((seg, idx) => (
-                <div key={idx} style={{ color: "#7c8287" }}>
+                <div key={idx} style={{ width: `${100 / HEALTH_BAR_SEGMENTS.length}%`, color: "#7c8287" }}>
                   <p>{seg.scoreRange}</p>
                   <p>{seg.label}</p>
                 </div>

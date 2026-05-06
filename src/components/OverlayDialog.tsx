@@ -41,12 +41,12 @@ export function OverlayDialog({
           />
           <motion.div
             className={[
-              "relative w-full rounded-2xl border bg-white shadow-xl",
+              "relative w-full rounded-2xl border bg-white shadow-xl overflow-y-auto",
               size === "xl"
-                ? "max-w-5xl p-8"
+                ? "max-w-5xl max-h-[90vh] p-8"
                 : size === "lg"
-                ? "max-w-2xl p-8"
-                : "max-w-md p-6",
+                ? "max-w-2xl max-h-[90vh] p-8"
+                : "max-w-md max-h-[90vh] p-6",
               tone === "danger" ? "border-red-200" : "border-zinc-200",
             ].join(" ")}
             initial={{ opacity: 0, scale: 0.98, y: 8 }}
