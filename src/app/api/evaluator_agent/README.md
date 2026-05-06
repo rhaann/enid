@@ -22,7 +22,8 @@ POST /api/evaluator_agent
    - **Website Eval Agent** — scores 8 website dimensions (overview, visual execution, messaging, UX, accessibility, CTAs, social consistency, risk framing) and writes a synthesis. Results saved to `dlb_website_eval_results`.
    - **Brand Deep Dive Agent** — scores 6 brand dimensions (overview, identity, look, sound, audience, market fit) and generates a 90-day action plan + brand health summary. Results saved to `dlb_brand_eval_results`.
 9. **Mark Done** — updates both `dlb_audit_inputs` and `workflow_runs` to `"Done"`.
-10. **On any error** — marks both records as `"Failed"` with the error message.
+10. **Fire sub-agents** — triggers `POST /api/competitor_agent` and `POST /api/social_media_agent` in parallel using `fetch` without awaiting, so the evaluator returns immediately while both agents run independently in the background.
+11. **On any error** — marks both records as `"Failed"` with the error message.
 
 ## Files
 
@@ -39,6 +40,7 @@ POST /api/evaluator_agent
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (bypasses RLS for inserts) |
 | `FIRECRAWL_API_KEY` | Firecrawl API key for mapping and scraping |
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
+| `INTERNAL_API_SECRET` | Shared secret for server-to-server calls to competitor and social media agents |
 
 ## Database tables
 

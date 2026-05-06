@@ -41,10 +41,10 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function computePending(a: AuditReport): string[] {
-    if (isTerminal(a)) return [];
+    const activeAgents = a.activeAgents ?? [];
     const pending: string[] = [];
-    if (!a.socialMediaReport && !a.socialMediaError) pending.push("social");
-    if (!a.competitorReport && !a.competitorError) pending.push("competitors");
+    if (activeAgents.includes("social-media-agent")) pending.push("social");
+    if (activeAgents.includes("competitor-agent")) pending.push("competitors");
     return pending;
   }
 

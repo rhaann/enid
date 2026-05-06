@@ -127,8 +127,8 @@ No clear value prop above fold → Cap at 48
 Company-centric language (we/us) dominates → Cap at 52
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- Key Takeaway: One sentence summary.
+- Assessment: 1-2 sentences max. State the key fact and why it matters to the business. No padding.
+- Key Takeaway: One sentence, max 12 words.
 
 2. Brand Expression & Visual Execution
 Evaluation Task: Assess how logo, colors, typography, and imagery are used. Note consistency with intended positioning (premium, corporate, etc.) and call out style mismatches.
@@ -168,9 +168,9 @@ Stock imagery dominates → Cap at 55
 Inconsistent visual execution across pages → Cap at 50
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 3. Messaging & Clarity
 Evaluation Task: Evaluate hero sections, headlines, and subheadlines. Identify jargon, vague phrases, or messaging gaps. Look for concrete outcomes and proof points.
@@ -209,9 +209,9 @@ Benefits are vague or implied, not stated → Cap at 52
 No clear differentiation stated → Cap at 54
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 4. UX & Navigation
 Evaluation Task: Assess navigation structure (clear vs overloaded), page layout, readability, and content hierarchy. Note any friction in key flows (booking, signing up).
@@ -255,9 +255,9 @@ Poor mobile experience → Cap at 52
 Broken or confusing user flows → Cap at 48
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 5. Accessibility & Contrast (High-Level)
 Evaluation Task: Comment on color contrast patterns, font legibility, and use of alt-text cues or aria-labels (where visible). Check alignment with any provided accessibility statement.
@@ -299,9 +299,9 @@ Poor contrast on multiple elements → Cap at 50
 No evidence of accessibility considerations → Cap at 45
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 6. CTAs, Trust & Conversion
 Evaluation Task: Identify main CTAs and comment on their visibility and specificity. Note trust signals: testimonials, logos, case studies, or certifications.
@@ -352,9 +352,9 @@ Multiple competing CTAs with no hierarchy → Cap at 56
 No CTAs above the fold → Cap at 50
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 7. Social Consistency Check
 Evaluation Task: Check linked social channels. Do visuals and messaging reinforce or contradict the website's positioning?
@@ -395,9 +395,9 @@ Minimal or non-existent social proof/links → Cap at 50
 Abandoned profiles (6+ months inactive) → Cap at 48
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 8. Risk & Confidence Framing
 Evaluation Task: Assess how the website builds institutional credibility and mitigates perceived risk for buyers, investors, or partners. Look for signals that answer: "Is this a real, stable company I can trust with my money/data/business?"
@@ -486,13 +486,15 @@ Anonymous operation (no company details) → Cap at 45
 Active red flags (mixed content, fake testimonials, broken badges) → Cap at 40
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- What's Working: 2-3 bullet points up to 6 words that describe what's currently good.
-- What Needs Attention: 2-3 bullet points up to 6 words that describe what needs attention.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- What's Working: 2-3 items, max 6 words each.
+- What Needs Attention: 2-3 items, max 6 words each.
 
 9. Final Synthesis Layer
 
 Add one closing synthesis that answers: Where the brand is strong? Where it is exposed? What matters most in the next 90 days? Think of this as the executive takeaway. Synthesize this into What's Working Overall and What Needs Attention Overall.
+
+WRITING RULES: Never use em dashes (—). Use a comma or period instead.
 
 Output (STRICT JSON ONLY)
 Return exactly:
@@ -575,7 +577,7 @@ Category must be inferred → Cap at 50
 No clear problem statement visible → Cap at 48
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 short sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
 
 2. Who You Are
 Evaluation Task: Extract and summarize: mission, vision, values, origin story, and core promise. Identify recurring themes and ideas repeated across the site.
@@ -621,8 +623,8 @@ Conflicting themes across pages → Cap at 46
 Mission is company-centric, not impact-focused → Cap at 50
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 short sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- Opportunity: 2-3 bullet points up to 6 words that describe what's the potential or what can be done.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- Opportunity: 2-3 items, max 6 words each.
 
 3. How You Look
 Evaluation Task: Describe logo style and signals (modern/corporate/playful/technical). Summarize color palette, typography, and imagery/illustration style.
@@ -673,8 +675,8 @@ Inconsistent visual execution across pages → Cap at 50
 No identifiable design system → Cap at 48
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 short sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- Opportunity: 2-3 bullet points up to 6 words that describe what's the potential or what can be done.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- Opportunity: 2-3 items, max 6 words each.
 
 4. How You Sound
 Evaluation Task: Identify primary value props and differentiators. Describe voice and tone (bold/technical/friendly/authoritative/casual/formal). Pull out taglines or recurring naming patterns.
@@ -730,8 +732,8 @@ Differentiation claimed without proof → Cap at 54
 No clear tagline or memorable phrase → Cap at 56
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 short sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- Opportunity: 2-3 bullet points up to 6 words that describe what's the potential or what can be done.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- Opportunity: 2-3 items, max 6 words each.
 
 5. Who You Serve
 Evaluation Task: Infer main audience segments (Enterprise/SMB/Consumer, Industry verticals, Role-based). Identify their specific needs/pain points. Connect brand promises to "jobs to be done."
@@ -783,8 +785,8 @@ No use cases or job-to-be-done mentioned → Cap at 48
 "For everyone" positioning → Cap at 45
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 short sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- Opportunity: 2-3 bullet points up to 6 words that describe what's the potential or what can be done.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- Opportunity: 2-3 items, max 6 words each.
 
 6. Position and Market Fit
 Evaluation Task: Describe relative positioning (premium vs. accessible, boutique vs. global, simple vs. feature-rich). Identify what is unique vs. what is generic. Assess competitive frame of reference.
@@ -839,16 +841,18 @@ Positioning contradicts evidence → Cap at 48
 No reason to choose given → Cap at 46
 
 Please provide the following corresponding text:
-- Assessment: A 2-3 short sentence assessment which states facts plainly, avoids judgmental phrasing, emphasizes fixability and next steps. Why does this matter to the business? Is this a risk, missed opportunity, or competitive advantage?
-- Opportunity: 2-3 bullet points up to 6 words that describe what's the potential or what can be done.
+- Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
+- Opportunity: 2-3 items, max 6 words each.
 
 7. Ninety Day Plan
 
-There are 3 topics [30 day plan, 60 day plan, 90 day plan], provide 3–5 action bullets per topic. Start with Imperative Verbs (Define, Build, Test, Launch, Audit, Create, etc.). One line per bullet. Each bullet must be specific and actionable. A Mini-SWOT format (Strengths, Weaknesses, Opportunities, Threats) can be done to come up with these plans.
+3 topics: 30 day plan, 60 day plan, 90 day plan. Max 3 bullets per topic. Start with an imperative verb (Define, Build, Test, Launch, Audit, Create, etc.). Max 12 words per bullet. Specific and actionable only — no padding.
 
 8. Brand Health
 
-2-3 Sentences that describe the overall brand health.
+1-2 sentences max describing the overall brand health.
+
+WRITING RULES: Never use em dashes (—). Use a comma or period instead.
 
 Output (STRICT JSON ONLY)
 Return exactly:

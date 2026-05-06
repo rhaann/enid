@@ -359,7 +359,7 @@ export default function SocialMediaReportPage() {
   // ── 90-Day Action Plan (last card) ──
   if (ninetyDayActionPlan?.length > 0) {
     const actionPlanTabs = ninetyDayActionPlan.map((initiative: any) => ({
-      title: initiative.initiative_title,
+      title: initiative.initiativeTitle ?? initiative.initiative_title ?? "Initiative",
       content: (
         <ul className="list-disc pl-4 space-y-1">
           {initiative.actions.map((action: string, j: number) => (
@@ -374,6 +374,7 @@ export default function SocialMediaReportPage() {
       title: "90-Day Action Plan",
       content: <VerticalTabs items={actionPlanTabs} />,
       wide: true,
+      tall: true,
     });
   }
 

@@ -87,6 +87,7 @@ export type AuditReport = {
   companyName: string;
   createdAt?: string;
   auditStatus?: string;
+  activeAgents?: string[];
   competitorReport?: CompetitorReport;
   brandReport: {
     brandOverview: BrandOverviewField;

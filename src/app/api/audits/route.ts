@@ -99,6 +99,7 @@ export async function GET() {
       size: formatBytes(a.file_size_bytes ?? 0),
     })),
     competitorWebsites: Array.isArray(r.competitor_urls) ? r.competitor_urls : [],
+    location: r.location ?? "",
     targetLocation: r.target_location ?? "",
     activity: [],
     notes: r.admin_notes ?? "",

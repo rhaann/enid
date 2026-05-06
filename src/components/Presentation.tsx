@@ -12,6 +12,7 @@ export type PresentationItem = {
   rightMeta?: React.ReactNode;
   score?: number; // 0-100
   wide?: boolean;
+  tall?: boolean;
 };
 
 type PresentationProps = {
@@ -125,7 +126,7 @@ export function Presentation({ items, className, initialIndex = 0 }: Presentatio
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               className="w-full"
             >
-              <div className={`overflow-hidden rounded-xl shadow-2xl flex flex-col ${current?.wide ? "h-[52vh]" : "h-[60vh]"}`} style={{ backgroundColor: palette.navy }}>
+              <div className={`overflow-hidden rounded-xl shadow-2xl flex flex-col ${current?.tall ? "h-[63vh]" : current?.wide ? "h-[52vh]" : "h-[60vh]"}`} style={{ backgroundColor: palette.navy }}>
                 <div className="relative p-7 sm:p-9 md:p-12 h-full flex flex-col">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-6 mb-6 flex-shrink-0">

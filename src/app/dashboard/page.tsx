@@ -52,6 +52,7 @@ type AuditRequest = {
   businessGoals: string;
   brandAssets: BrandAsset[];
   competitorWebsites: string[];
+  location: string;
   targetLocation: string;
   activity: ActivityEntry[];
   notes: string;
@@ -198,6 +199,7 @@ type EditableFields = {
   objectives: string[];
   social: { linkedin?: string; twitter?: string; facebook?: string; instagram?: string; pinterest?: string; youtube?: string; tiktok?: string };
   competitorWebsites: string[];
+  location: string;
   targetLocation: string;
   notes: string;
 };
@@ -214,6 +216,7 @@ function buildEditData(audit: AuditRequest): EditableFields {
     objectives: [...audit.objectives],
     social: { ...audit.social },
     competitorWebsites: [...audit.competitorWebsites],
+    location: audit.location,
     targetLocation: audit.targetLocation,
     notes: audit.notes,
   };
@@ -360,6 +363,7 @@ function DetailPanel({
           youtube: data.social.youtube || "",
           tiktok: data.social.tiktok || "",
           competitorWebsites: data.competitorWebsites.filter((c) => c.trim()),
+          location: data.location,
           targetLocation: data.targetLocation,
           notes: data.notes,
         }),
@@ -378,6 +382,7 @@ function DetailPanel({
         objectives: data.objectives,
         social: data.social,
         competitorWebsites: data.competitorWebsites.filter((c) => c.trim()),
+        location: data.location,
         targetLocation: data.targetLocation,
         notes: data.notes,
       });
@@ -705,6 +710,7 @@ function DetailPanel({
                       <EditableInfoCard label="Industry" value={editData.industry} onChange={(v) => setEditData((d) => ({ ...d, industry: v }))} />
                       <EditableInfoCard label="Business Goals" value={editData.businessGoals} onChange={(v) => setEditData((d) => ({ ...d, businessGoals: v }))} />
                       <EditableInfoCard label="Contact Email" value={editData.clientEmail} onChange={(v) => setEditData((d) => ({ ...d, clientEmail: v }))} type="email" />
+                      <EditableInfoCard label="Location" value={editData.location} onChange={(v) => setEditData((d) => ({ ...d, location: v }))} />
                     </>
                   ) : (
                     <>
@@ -715,6 +721,7 @@ function DetailPanel({
                       <InfoCard label="Industry" value={audit.industry || "\u2014"} />
                       <InfoCard label="Business Goals" value={audit.businessGoals || "\u2014"} />
                       <InfoCard label="Contact Email" value={audit.clientEmail || "\u2014"} />
+                      <InfoCard label="Location" value={audit.location || "\u2014"} />
                     </>
                   )}
                 </div>

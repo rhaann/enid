@@ -24,5 +24,8 @@ export async function fetchAuditById(id: string): Promise<AuditReport> {
   if (json.status) {
     report.auditStatus = json.status;
   }
+  if (json.activeAgents) {
+    report.activeAgents = json.activeAgents;
+  }
   return report;
 }

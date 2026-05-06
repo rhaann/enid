@@ -1,7 +1,12 @@
 export const dynamic = "force-dynamic";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/supabase/auth";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 const ALLOWED_FIELDS: Record<string, string> = {
   companyName: "name",
@@ -20,6 +25,7 @@ const ALLOWED_FIELDS: Record<string, string> = {
   youtube: "youtube_url",
   tiktok: "tiktok_url",
   competitorWebsites: "competitor_urls",
+  location: "location",
   targetLocation: "target_location",
   notes: "admin_notes",
 };
@@ -51,7 +57,7 @@ export async function PATCH(
     return Response.json({ error: "No valid fields to update." }, { status: 400 });
   }
 
-  const { error } = await supabase()
+  const { error } = await supabaseAdmin
     .from("dlb_audit_inputs")
     .update(updates)
     .eq("id", id);

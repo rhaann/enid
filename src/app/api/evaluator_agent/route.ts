@@ -115,6 +115,10 @@ export async function POST(req: NextRequest) {
     }
     auditInputId = audit_input_id;
 
+    const host = req.headers.get("host") ?? "localhost:3000";
+    const proto = req.headers.get("x-forwarded-proto") ?? "http";
+    const appUrl = `${proto}://${host}`;
+
     // 2. Fetch audit input row
     const { data: auditInput, error: fetchError } = await supabaseAdmin
       .from("dlb_audit_inputs")
@@ -358,6 +362,30 @@ export async function POST(req: NextRequest) {
       .from("dlb_audit_inputs")
       .update({ status: "Done", status_updated_at: new Date().toISOString() })
       .eq("id", audit_input_id);
+
+    // Fire competitor and social media agents in parallel — don't await so the
+    // evaluator returns immediately and both agents run independently.
+    const agentPayload = JSON.stringify({ audit_input_id });
+    const agentHeaders = {
+      "Content-Type": "application/json",
+      "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
+    };
+
+    fetch(`${appUrl}/api/competitor_agent`, {
+      method: "POST",
+      headers: agentHeaders,
+      body: agentPayload,
+    }).catch((err) => {
+      console.error("[evaluator_agent] Failed to trigger competitor agent:", err);
+    });
+
+    fetch(`${appUrl}/api/social_media_agent`, {
+      method: "POST",
+      headers: agentHeaders,
+      body: agentPayload,
+    }).catch((err) => {
+      console.error("[evaluator_agent] Failed to trigger social media agent:", err);
+    });
 
     return NextResponse.json({ success: true });
   } catch (e) {
