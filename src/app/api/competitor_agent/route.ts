@@ -552,11 +552,11 @@ export async function POST(req: NextRequest) {
 
       // Run only the searches that are non-zero.
       type SearchEntry = { type: "local" | "national" | "global"; count: number; suffix: string };
-      const searchPlan: SearchEntry[] = [
-        { type: "local", count: localCount, suffix: `competitor based in ${clientCity || "same city"}` },
-        { type: "national", count: nationalCount, suffix: "competitor in same country" },
-        { type: "global", count: globalCount, suffix: "international competitor" },
-      ].filter((s) => s.count > 0);
+      const searchPlan: SearchEntry[] = ([
+        { type: "local" as const, count: localCount, suffix: `competitor based in ${clientCity || "same city"}` },
+        { type: "national" as const, count: nationalCount, suffix: "competitor in same country" },
+        { type: "global" as const, count: globalCount, suffix: "international competitor" },
+      ] as SearchEntry[]).filter((s) => s.count > 0);
 
       const exaResults = await Promise.all(
         searchPlan.map((s) => searchExa(`${exaQuery} ${s.suffix}`, s.count))
