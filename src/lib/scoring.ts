@@ -12,6 +12,7 @@ export const SCORE_COLORS = {
   orange: "#d4a248",
   yellow: "#e8c040",
   green: "#57a587",
+  blue: "#17bfca",
 } as const;
 
 export type ScoreColor = (typeof SCORE_COLORS)[keyof typeof SCORE_COLORS];

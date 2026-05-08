@@ -167,14 +167,14 @@ function AuditContent({ children }: { children: ReactNode }) {
                   <div
                     key={idx}
                     className="h-full"
-                    style={{ width: `${seg.weight * 100}%`, backgroundColor: seg.color }}
+                    style={{ flex: 1, backgroundColor: seg.color }}
                   />
                 ))}
               </div>
             </div>
-            <div className="mt-3 flex text-center text-sm">
+            <div className="mt-3 flex text-sm">
               {HEALTH_BAR_SEGMENTS.map((seg, idx) => (
-                <div key={idx} style={{ width: `${100 / HEALTH_BAR_SEGMENTS.length}%`, color: "#7c8287" }}>
+                <div key={idx} style={{ width: `${100 / HEALTH_BAR_SEGMENTS.length}%`, color: "#7c8287" }} className="text-left">
                   <p>{seg.scoreRange}</p>
                   <p>{seg.label}</p>
                 </div>
