@@ -10,7 +10,7 @@
 export const SCORE_COLORS = {
   red: "#c96858",
   orange: "#d4a248",
-  yellow: "#e8c040",
+  yellow: "#FFD700",
   green: "#57a587",
 } as const;
 

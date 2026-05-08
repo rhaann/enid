@@ -1,0 +1,571 @@
+/**
+ * @file route.ts
+ * POST /api/snapshot_agent
+ *
+ * Snapshot Agent — generates a concise executive Brand Snapshot PDF for a
+ * completed audit. The route:
+ *   1. Fetches all available audit result rows from Supabase.
+ *   2. Calculates the Enid Score (plain TypeScript average of all numeric scores).
+ *   3. Runs two Tavily searches to determine SEO / visibility presence.
+ *   4. Calls Claude (claude-sonnet-4-6) to synthesise the structured snapshot.
+ *   5. Renders a PDF with @react-pdf/renderer and returns it as a download.
+ *
+ * Auth: requires an admin browser session (requireAdmin).
+ */
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import Anthropic from "@anthropic-ai/sdk";
+import { pdf } from "@react-pdf/renderer";
+import React from "react";
+import path from "path";
+import { requireAdmin } from "@/lib/supabase/auth";
+import { SnapshotDocument } from "@/components/SnapshotPDFTemplate";
+import { SNAPSHOT_SYSTEM_PROMPT } from "./prompts";
+import type {
+  SnapshotPDFData,
+  SnapshotResult,
+  SeoVisibility,
+} from "@/components/SnapshotPDFTemplate";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Absolute path to the Enid logo for server-side PDF rendering. */
+const LOGO_PATH = path.join(process.cwd(), "public", "Enid_Wordmark_Full_Color.png");
+
+/** Known social media domains used to classify search result URLs. */
+const SOCIAL_DOMAINS = [
+  "linkedin.com",
+  "twitter.com",
+  "x.com",
+  "facebook.com",
+  "instagram.com",
+  "youtube.com",
+  "tiktok.com",
+  "pinterest.com",
+  "threads.net",
+  "reddit.com",
+  "medium.com",
+];
+
+/**
+ * Website score column names in dlb_website_eval_results.
+ * Each column is a JSON object with a "Score" key (capital S).
+ */
+const WEBSITE_SCORE_FIELDS = [
+  "website_overview",
+  "brand_expression_and_visual_execution",
+  "messaging_and_clarity",
+  "ux_navigation",
+  "accessibility_and_contrast",
+  "ctas_trust_and_conversion",
+  "social_consistency_check",
+  "risk_and_confidence_framing",
+] as const;
+
+/**
+ * Brand score column names in dlb_brand_eval_results.
+ * Each column is a JSON object with a "score" key (lowercase s).
+ */
+const BRAND_SCORE_FIELDS = [
+  "brand_overview",
+  "who_you_are",
+  "how_you_look",
+  "how_you_sound",
+  "who_you_serve",
+  "position_and_market_fit",
+] as const;
+
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Shape of a Tavily search result entry. */
+interface TavilyResult {
+  url: string;
+  title: string;
+  content: string;
+}
+
+/** Subset of the Tavily API response we care about. */
+interface TavilyResponse {
+  results?: TavilyResult[];
+}
+
+// ---------------------------------------------------------------------------
+// URL helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extracts the bare hostname from a URL, stripping www. and lowercasing.
+ * Returns the original string lowercased if parsing fails.
+ *
+ * @param url - Any URL string.
+ */
+function getDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return url.toLowerCase().replace(/^www\./i, "");
+  }
+}
+
+/**
+ * Returns true if the URL belongs to a known social media platform.
+ *
+ * @param url - URL to test.
+ */
+function isSocialUrl(url: string): boolean {
+  const domain = getDomain(url);
+  return SOCIAL_DOMAINS.some((s) => domain === s || domain.endsWith(`.${s}`));
+}
+
+// ---------------------------------------------------------------------------
+// Score extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Safely extracts a numeric score from a database field that may be a JSON
+ * string, a JSON object, or null/undefined.
+ *
+ * @param field - Raw DB column value.
+ * @param key   - JSON key to read ("Score" for website rows, "score" for brand rows).
+ * @returns The score number, or null if not parseable or zero.
+ */
+function extractScore(field: unknown, key: string): number | null {
+  if (!field) return null;
+
+  let parsed: Record<string, unknown>;
+
+  if (typeof field === "string") {
+    try {
+      parsed = JSON.parse(field) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  } else if (typeof field === "object" && field !== null) {
+    parsed = field as Record<string, unknown>;
+  } else {
+    return null;
+  }
+
+  const val = Number(parsed[key]);
+  return !isNaN(val) && val > 0 ? val : null;
+}
+
+/**
+ * Calculates the Enid Score by averaging all numeric scores available across
+ * website, brand, and social media results. Returns 0 if no scores found.
+ *
+ * @param websiteRow   - Single row from dlb_website_eval_results.
+ * @param brandRow     - Single row from dlb_brand_eval_results.
+ * @param socialRows   - All rows from dlb_social_media_agent_results.
+ */
+function calculateEnidScore(
+  websiteRow: Record<string, unknown> | null,
+  brandRow: Record<string, unknown> | null,
+  socialRows: Record<string, unknown>[]
+): number {
+  const scores: number[] = [];
+
+  // Website scores — JSON objects with capital "Score" key
+  if (websiteRow) {
+    for (const field of WEBSITE_SCORE_FIELDS) {
+      const s = extractScore(websiteRow[field], "Score");
+      if (s !== null) scores.push(s);
+    }
+  }
+
+  // Brand scores — JSON objects with lowercase "score" key
+  if (brandRow) {
+    for (const field of BRAND_SCORE_FIELDS) {
+      const s = extractScore(brandRow[field], "score");
+      if (s !== null) scores.push(s);
+    }
+  }
+
+  // Social media: platform_average per platform row
+  for (const row of socialRows) {
+    const avg = Number(row["platform_average"]);
+    if (!isNaN(avg) && avg > 0) scores.push(avg);
+  }
+
+  // Social media: overall_assessment.overall_score from the first row's overal_evaluation
+  if (socialRows.length > 0) {
+    const raw = socialRows[0]["overal_evaluation"];
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const overallScore = Number(
+        (parsed as Record<string, Record<string, unknown>>)?.["overall_assessment"]?.["overall_score"]
+      );
+      if (!isNaN(overallScore) && overallScore > 0) scores.push(overallScore);
+    } catch {
+      // overall score not available — skip
+    }
+  }
+
+  if (scores.length === 0) return 0;
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+}
+
+// ---------------------------------------------------------------------------
+// Tavily SEO check
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs a single Tavily search and returns the result array.
+ * Throws with a descriptive message if the request fails.
+ *
+ * @param query - Natural-language search query.
+ */
+async function searchTavily(query: string): Promise<TavilyResult[]> {
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: process.env.TAVILY_API_KEY,
+      query,
+      search_depth: "basic",
+      max_results: 5,
+      include_answer: false,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Tavily search failed (HTTP ${res.status}) for query: "${query}"`);
+  }
+
+  const data = (await res.json()) as TavilyResponse;
+  return data.results ?? [];
+}
+
+/**
+ * Runs two Tavily searches and derives visibility flags:
+ *   - websiteVisible: company domain appears in results
+ *   - socialVisible: a known social platform appears in results
+ *   - pressVisible: a non-company, non-social URL appears in results
+ *
+ * @param companyName - The company name to search for.
+ * @param companyUrl  - The company's primary URL (used to determine its domain).
+ */
+async function checkSeoVisibility(
+  companyName: string,
+  companyUrl: string
+): Promise<SeoVisibility> {
+  const companyDomain = getDomain(companyUrl);
+
+  // Run both searches concurrently
+  const [brandResults, reviewResults] = await Promise.all([
+    searchTavily(companyName),
+    searchTavily(`"${companyName}" review`),
+  ]);
+
+  const allUrls = [...brandResults, ...reviewResults].map((r) => r.url);
+
+  const websiteVisible = allUrls.some((u) => getDomain(u) === companyDomain);
+  const socialVisible = allUrls.some((u) => isSocialUrl(u));
+  const pressVisible = allUrls.some((u) => {
+    const d = getDomain(u);
+    return d !== companyDomain && !isSocialUrl(u);
+  });
+
+  const trueCount = [websiteVisible, socialVisible, pressVisible].filter(Boolean).length;
+  const visibilityScore: SeoVisibility["visibilityScore"] =
+    trueCount >= 3 ? "Strong" : trueCount === 2 ? "Moderate" : "Weak";
+
+  return { websiteVisible, socialVisible, pressVisible, visibilityScore };
+}
+
+// ---------------------------------------------------------------------------
+// Claude response parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses the structured JSON snapshot from Claude's raw text response.
+ * Falls back to regex extraction if the response is wrapped in markdown fences.
+ *
+ * @param raw - Raw text from Claude's response.
+ */
+function parseSnapshotJson(raw: string): SnapshotResult {
+  const trimmed = raw.trim();
+
+  try {
+    return JSON.parse(trimmed) as SnapshotResult;
+  } catch {
+    // Try to extract JSON from markdown code fences
+    const match = trimmed.match(/\{[\s\S]*\}/);
+    if (!match) {
+      throw new Error(
+        `Snapshot agent returned no parseable JSON: ${trimmed.slice(0, 300)}`
+      );
+    }
+    try {
+      return JSON.parse(match[0]) as SnapshotResult;
+    } catch {
+      throw new Error(
+        `Snapshot agent returned invalid JSON: ${match[0].slice(0, 300)}`
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Route handler
+// ---------------------------------------------------------------------------
+
+/** POST /api/snapshot_agent */
+export async function POST(req: NextRequest) {
+  // Auth: admin only
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  // Parse body
+  let audit_input_id: string;
+  try {
+    const body = (await req.json()) as { audit_input_id?: string };
+    if (!body.audit_input_id) {
+      return NextResponse.json(
+        { error: "audit_input_id is required." },
+        { status: 400 }
+      );
+    }
+    audit_input_id = body.audit_input_id;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+  try {
+    // ------------------------------------------------------------------
+    // Step 1: Fetch all audit data concurrently
+    // ------------------------------------------------------------------
+    const [inputResult, websiteResult, brandResult, socialResult, competitorResult] =
+      await Promise.allSettled([
+        supabaseAdmin
+          .from("dlb_audit_inputs")
+          .select("*")
+          .eq("id", audit_input_id)
+          .single(),
+        supabaseAdmin
+          .from("dlb_website_eval_results")
+          .select("*")
+          .eq("dlb_audit_inputs_id", audit_input_id)
+          .single(),
+        supabaseAdmin
+          .from("dlb_brand_eval_results")
+          .select("*")
+          .eq("dlb_audit_input_id", audit_input_id)
+          .single(),
+        supabaseAdmin
+          .from("dlb_social_media_agent_results")
+          .select("*")
+          .eq("audit_input_id", audit_input_id),
+        supabaseAdmin
+          .from("dlb_competitor_agent_results")
+          .select("*")
+          .eq("dlb_audit_inputs_id", audit_input_id),
+      ]);
+
+    // Audit input is required — everything else is optional (may not have run)
+    if (inputResult.status === "rejected" || !inputResult.value.data) {
+      return NextResponse.json(
+        { error: `Audit input not found for ID: ${audit_input_id}` },
+        { status: 404 }
+      );
+    }
+
+    const auditInput = inputResult.value.data as Record<string, unknown>;
+    const websiteRow =
+      websiteResult.status === "fulfilled" && websiteResult.value.data
+        ? (websiteResult.value.data as Record<string, unknown>)
+        : null;
+    const brandRow =
+      brandResult.status === "fulfilled" && brandResult.value.data
+        ? (brandResult.value.data as Record<string, unknown>)
+        : null;
+    const socialRows: Record<string, unknown>[] =
+      socialResult.status === "fulfilled" && socialResult.value.data
+        ? (socialResult.value.data as Record<string, unknown>[])
+        : [];
+    const competitorRows: Record<string, unknown>[] =
+      competitorResult.status === "fulfilled" && competitorResult.value.data
+        ? (competitorResult.value.data as Record<string, unknown>[])
+        : [];
+
+    const companyName = String(auditInput["name"] ?? "Unknown Company");
+    const companyUrl = String(auditInput["url"] ?? "");
+
+    // ------------------------------------------------------------------
+    // Step 2: Calculate Enid Score (plain TypeScript — no LLM)
+    // ------------------------------------------------------------------
+    const enidScore = calculateEnidScore(websiteRow, brandRow, socialRows);
+
+    // ------------------------------------------------------------------
+    // Step 3: SEO visibility check via Tavily
+    // ------------------------------------------------------------------
+    let seoVisibility: SeoVisibility;
+    try {
+      seoVisibility = await checkSeoVisibility(companyName, companyUrl);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "SEO check failed";
+      console.error("[snapshot_agent] SEO check error:", msg);
+      // Graceful fallback — visibility unknown
+      seoVisibility = {
+        websiteVisible: false,
+        socialVisible: false,
+        pressVisible: false,
+        visibilityScore: "Weak",
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Step 4: Call Claude snapshot agent
+    // ------------------------------------------------------------------
+    const userMessage = JSON.stringify(
+      {
+        company_info: auditInput,
+        website_eval: websiteRow ?? "Not available",
+        brand_eval: brandRow ?? "Not available",
+        social_media_results:
+          socialRows.length > 0 ? socialRows : "Not available",
+        competitor_results:
+          competitorRows.length > 0 ? competitorRows : "Not available",
+        enid_score: enidScore,
+        seo_visibility: seoVisibility,
+      },
+      null,
+      2
+    );
+
+    let claudeResponse: Anthropic.Message;
+    try {
+      claudeResponse = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2048,
+        system: SNAPSHOT_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Claude API call failed";
+      throw new Error(`Snapshot agent Claude call failed: ${msg}`);
+    }
+
+    const rawText = claudeResponse.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+
+    const snapshotResult = parseSnapshotJson(rawText);
+
+    // ------------------------------------------------------------------
+    // Step 5: Generate PDF and return as download
+    // ------------------------------------------------------------------
+    const pdfData: SnapshotPDFData = {
+      companyName,
+      companyUrl,
+      createdAt: new Date().toISOString(),
+      enidScore,
+      seoVisibility,
+      snapshot: snapshotResult,
+      logoSrc: LOGO_PATH,
+    };
+
+    let pdfBytes: Uint8Array;
+    try {
+      // @react-pdf/renderer v4 toBuffer() can return a Node.js Buffer,
+      // a Node.js Readable stream, or a Web ReadableStream depending on the
+      // runtime environment. We handle all three cases.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawPdf: unknown = await pdf(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        React.createElement(SnapshotDocument, { data: pdfData }) as any
+      ).toBuffer();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = rawPdf as any;
+
+      if (Buffer.isBuffer(raw)) {
+        // Node.js Buffer (most common case in Next.js API routes)
+        pdfBytes = new Uint8Array(raw);
+      } else if (raw instanceof Uint8Array) {
+        // Uint8Array (Buffer extends Uint8Array, caught above, but keep as fallback)
+        pdfBytes = raw;
+      } else if (raw !== null && typeof raw === "object" && typeof raw.getReader === "function") {
+        // Web ReadableStream<Uint8Array>
+        const stream = raw as ReadableStream<Uint8Array>;
+        const chunks: Uint8Array[] = [];
+        const reader = stream.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+        const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+        pdfBytes = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          pdfBytes.set(chunk, offset);
+          offset += chunk.length;
+        }
+      } else if (raw !== null && typeof raw === "object" && typeof raw.on === "function") {
+        // Node.js Readable stream (EventEmitter style)
+        const chunks: Buffer[] = [];
+        await new Promise<void>((resolve, reject) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          raw.on("data", (chunk: any) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          raw.on("end", resolve);
+          raw.on("error", reject);
+        });
+        const combined = Buffer.concat(chunks);
+        pdfBytes = new Uint8Array(combined);
+      } else {
+        throw new Error(
+          `pdf().toBuffer() returned unrecognised type: ${typeof raw}` +
+          (raw !== null && typeof raw === "object"
+            ? `, keys: ${Object.keys(raw).slice(0, 10).join(", ")}`
+            : "")
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "PDF generation failed";
+      throw new Error(`Snapshot PDF generation failed: ${msg}`);
+    }
+
+    const safeName = companyName
+      .replace(/[^a-zA-Z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .toLowerCase();
+
+    // Use standard Response (not NextResponse) — Next.js accepts both from
+    // route handlers. NextResponse's BodyInit types are narrower and reject
+    // Uint8Array despite it being valid at runtime.
+    return new Response(pdfBytes.buffer as ArrayBuffer, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="enid-snapshot-${safeName}.pdf"`,
+        "Content-Length": String(pdfBytes.length),
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Snapshot generation failed.";
+    console.error("[snapshot_agent] Error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
