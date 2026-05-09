@@ -132,13 +132,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       );
     }
 
-    const { data: runningWorkflows } = await supabase()
+    // Fetch workflow runs ordered newest-first so we can determine the latest
+    // state for each agent (an agent may have multiple rows if retried).
+    const { data: workflowRuns } = await supabase()
       .from("workflow_runs")
-      .select("workflow_name")
+      .select("workflow_name, status, error_message")
       .eq("audit_input_id", id)
-      .eq("status", "In Progress");
+      .in("status", ["In Progress", "Failed"])
+      .order("created_at", { ascending: false });
 
-    const activeAgents = (runningWorkflows ?? []).map((r: { workflow_name: string }) => r.workflow_name);
+    const activeAgents: string[] = [];
+    const errorByAgent: Record<string, string> = {};
+    const seenAgents = new Set<string>();
+
+    for (const run of workflowRuns ?? []) {
+      // Only record the first (most recent) entry per agent name.
+      if (!seenAgents.has(run.workflow_name)) {
+        seenAgents.add(run.workflow_name);
+        if (run.status === "In Progress") {
+          activeAgents.push(run.workflow_name);
+        } else if (run.status === "Failed") {
+          errorByAgent[run.workflow_name] = run.error_message ?? "An unknown error occurred";
+        }
+      }
+    }
 
     return Response.json({
       data: merged,
@@ -146,6 +163,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       createdAt: auditInput?.created_at || null,
       status: auditInput?.status || null,
       activeAgents,
+      ...(errorByAgent["competitor-agent"] ? { competitor_error: errorByAgent["competitor-agent"] } : {}),
+      ...(errorByAgent["social-media-agent"] ? { social_error: errorByAgent["social-media-agent"] } : {}),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to fetch audit results.";

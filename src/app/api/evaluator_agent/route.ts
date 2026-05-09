@@ -115,10 +115,6 @@ export async function POST(req: NextRequest) {
     }
     auditInputId = audit_input_id;
 
-    const host = req.headers.get("host") ?? "localhost:3000";
-    const proto = req.headers.get("x-forwarded-proto") ?? "http";
-    const appUrl = `${proto}://${host}`;
-
     // 2. Fetch audit input row
     const { data: auditInput, error: fetchError } = await supabaseAdmin
       .from("dlb_audit_inputs")
@@ -236,6 +232,31 @@ export async function POST(req: NextRequest) {
         combinedHtml.slice(0, MAX_HTML_CHARS) + "\n\n[Content truncated due to size]";
     }
 
+    // Extract social media links from the scraped HTML so eval agents have an
+    // explicit list rather than having to hunt through raw markup.
+    const SOCIAL_PATTERNS: Record<string, RegExp> = {
+      LinkedIn: /https?:\/\/(www\.)?linkedin\.com\/(company|in)\/[^\s"'><]+/gi,
+      "Twitter/X": /https?:\/\/(www\.)?(twitter\.com|x\.com)\/[^\s"'><]+/gi,
+      Facebook: /https?:\/\/(www\.)?facebook\.com\/[^\s"'><]+/gi,
+      Instagram: /https?:\/\/(www\.)?instagram\.com\/[^\s"'><]+/gi,
+      YouTube: /https?:\/\/(www\.)?youtube\.com\/(channel|c|user|@)[^\s"'><]+/gi,
+      TikTok: /https?:\/\/(www\.)?tiktok\.com\/@[^\s"'><]+/gi,
+      Pinterest: /https?:\/\/(www\.)?pinterest\.com\/[^\s"'><]+/gi,
+    };
+
+    const socialLinksFound: string[] = [];
+    for (const [platform, pattern] of Object.entries(SOCIAL_PATTERNS)) {
+      const matches = [...new Set(combinedHtml.match(pattern) ?? [])];
+      // Keep only real profile URLs (filter out generic platform roots)
+      const profileMatches = matches.filter((url) => {
+        const path = url.replace(/^https?:\/\/(www\.)?[^/]+/i, "");
+        return path.length > 1;
+      });
+      if (profileMatches.length > 0) {
+        socialLinksFound.push(`${platform}: ${profileMatches[0]}`);
+      }
+    }
+
     // Shared user message for both eval agents
     const agentUserMessage = [
       `- Objectives: ${JSON.stringify(auditInput.objective ?? [])}`,
@@ -243,6 +264,7 @@ export async function POST(req: NextRequest) {
       `- Company Stage: ${(auditInput.company_stage as string) ?? "Not provided"}`,
       `- Industry: ${(auditInput.industry as string) ?? "Not provided"}`,
       `- Company Size: ${(auditInput.company_size as string) ?? "Not provided"}`,
+      `- Social Media Links found on website: ${socialLinksFound.length > 0 ? socialLinksFound.join(", ") : "None found"}`,
       `- Scraped HTML (all pages combined): ${combinedHtml}`,
     ].join("\n");
 
@@ -363,30 +385,8 @@ export async function POST(req: NextRequest) {
       .update({ status: "Done", status_updated_at: new Date().toISOString() })
       .eq("id", audit_input_id);
 
-    // Fire competitor and social media agents in parallel — don't await so the
-    // evaluator returns immediately and both agents run independently.
-    const agentPayload = JSON.stringify({ audit_input_id });
-    const agentHeaders = {
-      "Content-Type": "application/json",
-      "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
-    };
-
-    fetch(`${appUrl}/api/competitor_agent`, {
-      method: "POST",
-      headers: agentHeaders,
-      body: agentPayload,
-    }).catch((err) => {
-      console.error("[evaluator_agent] Failed to trigger competitor agent:", err);
-    });
-
-    fetch(`${appUrl}/api/social_media_agent`, {
-      method: "POST",
-      headers: agentHeaders,
-      body: agentPayload,
-    }).catch((err) => {
-      console.error("[evaluator_agent] Failed to trigger social media agent:", err);
-    });
-
+    // Competitor and social agents are triggered by run-audit after this
+    // response is received — see run-audit/route.ts for the orchestration.
     return NextResponse.json({ success: true });
   } catch (e) {
     const errorMessage = e instanceof Error ? e.message : "An unknown error occurred";

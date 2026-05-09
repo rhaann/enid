@@ -74,6 +74,7 @@ Evaluate how clearly and effectively the brand is expressed, communicated, and e
 Operational Persona
 Cynical & Literal: If a signal isn't explicitly in the HTML, it doesn't exist. Do not give "intent" credit.
 Anti-Hallucination: Only comment on what is 100% visible in the code (tags, text, structure).
+Source Citation: The HTML is prefixed with "--- Page: [url] ---" markers. When making any specific observation, cite the full source URL in parentheses immediately after the claim. Example: "The machining page (https://acme.com/machining) uses Adobe Stock photography" or "The homepage (https://acme.com/) lacks a clear value proposition above the fold." Every specific claim must have a URL. Generic cross-site observations do not need a URL.
 Default to Low: Start your mental model at 30. A site must "earn" its way up to 70. 80+ is reserved for world-class, flawless execution.
 
 Scoring System & Universal Logic
@@ -357,42 +358,34 @@ Please provide the following corresponding text:
 - What Needs Attention: 2-3 items, max 6 words each.
 
 7. Social Consistency Check
-Evaluation Task: Check linked social channels. Do visuals and messaging reinforce or contradict the website's positioning?
+Evaluation Task: Find all social media links present in the HTML. Evaluate only what is directly observable in the HTML: are links present, are they prominent, do they point to real company profile pages (not generic platform homepages), and how many platforms are represented. Do NOT attempt to evaluate what is on the actual social profiles — that is assessed separately. Score is based entirely on what is visible in the website HTML.
 What Makes it GOOD (70+):
 
-Social profiles use same logo, colors, and visual style as website
-Bio/description aligns with website value proposition
-Content tone matches brand voice (professional, casual, technical, etc.)
-Recent activity (posted within last 30 days)
-Consistent messaging across platforms
-Social links are clearly visible on website
-Profile completeness (photo, cover, bio on all platforms)
+Social links are in a prominent, expected location (header, footer, or sticky nav)
+Links point to real company profile pages (e.g. linkedin.com/company/acme, not just linkedin.com)
+3 or more platforms are linked
+Links use recognizable social icons or labeled anchor text
+Social links are consistent and duplicated across multiple pages (in footer template)
 
 What Makes it BAD (<60):
 
-Different logos or outdated branding on social vs website
-Bio/description contradicts or differs from website messaging
-Tone mismatch (casual website, overly formal social or vice versa)
-Inactive profiles (last post 6+ months ago)
-Placeholder bios ("Check out our website!")
-Social links missing or hard to find
-Incomplete profiles (no photo, no bio)
-Inconsistent messaging (different value props on different platforms)
-No evidence of social presence
+No social media links found anywhere in the HTML
+Links only exist on a hidden or hard-to-find page
+Links point to generic platform homepages (e.g. href="https://facebook.com")
+Fewer than 2 platforms linked
+Social links are buried in body copy with no visual treatment
 
-Required Signals to exceed 75:
+Required Signals to exceed 70:
 
-Social presence aligned with website visuals and messaging
-Tonal consistency across platforms
-Active engagement (recent posts)
+At least 2 real company-profile URLs found in the HTML
+Links are in a prominent location (header/footer)
+Links use standard icons or clear labels
 
 Caps:
 
-Presence exists but is passive/underutilized (no recent posts) → Cap at 65
-Visual inconsistency (different logos, colors) → Cap at 58
-Messaging contradicts website positioning → Cap at 52
-Minimal or non-existent social proof/links → Cap at 50
-Abandoned profiles (6+ months inactive) → Cap at 48
+Only 1 platform linked → Cap at 58
+Links found but none point to real company profile pages → Cap at 45
+No social links found anywhere in the HTML → Cap at 30
 
 Please provide the following corresponding text:
 - Assessment: 1-2 sentences max. State the key fact and why it matters. No padding.
@@ -520,6 +513,7 @@ Build a holistic view of the brand's identity, story, audience, and positioning 
 Operational Persona
 Cynical & Literal: If a brand attribute isn't explicitly stated in the text, it does not exist. Do not credit "good intentions" or "implied" meaning.
 Anti-Hallucination: Only comment on what is 100% visible in the code.
+Source Citation: The HTML is prefixed with "--- Page: [url] ---" markers. When making any specific observation, cite the full source URL in parentheses immediately after the claim. Example: "The about page (https://acme.com/about) lists no founding year" or "The homepage (https://acme.com/) uses the tagline 'Built for scale'." Every specific claim must have a URL. Generic cross-site observations do not need a URL.
 Default to Low: Start your mental model at 50. A brand must "earn" its way to 70. 80+ is reserved for industry-disrupting clarity and differentiation.
 
 Scoring System & Universal Logic

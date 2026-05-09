@@ -349,7 +349,7 @@ const CoverPage = ({ companyName, createdAt }: { companyName: string; createdAt?
               </View>
             ))}
           </View>
-          <Text style={styles.scoreCardRange}>Score: {card.starsRange}</Text>
+          <Text style={styles.scoreCardRange}>Stars: {card.starsRange}</Text>
           <Text style={styles.scoreCardDescription}>{card.description}</Text>
         </View>
       ))}
@@ -362,7 +362,7 @@ const CoverPage = ({ companyName, createdAt }: { companyName: string; createdAt?
       {/* Gradient bar */}
       <View style={styles.healthScaleBar}>
         {HEALTH_BAR_SEGMENTS.map((seg, idx) => (
-          <View key={idx} style={{ flex: seg.weight, backgroundColor: seg.color }} />
+          <View key={idx} style={{ flex: 1, backgroundColor: seg.color }} />
         ))}
       </View>
 

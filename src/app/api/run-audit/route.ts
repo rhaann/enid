@@ -1,4 +1,6 @@
 export const dynamic = "force-dynamic";
+// Needs to outlive the evaluator (up to 300s) plus a small dispatch window.
+export const maxDuration = 300;
 
 import { after } from "next/server";
 import { supabase } from "@/lib/supabase";
@@ -27,8 +29,6 @@ export async function POST(req: Request) {
     return Response.json({ error: "Audit not found." }, { status: 404 });
   }
 
-  // Only allow running when the audit has not been started yet (status is null).
-  // Once started, the user must reset it before running again.
   if (audit.status !== null) {
     return Response.json(
       { error: "This audit has already been started. Reset it first to run again." },
@@ -36,27 +36,66 @@ export async function POST(req: Request) {
     );
   }
 
-  // Derive the base URL from the incoming request so this works in both
-  // local dev and production without needing a NEXT_PUBLIC_APP_URL env var.
   const host = req.headers.get("host") ?? "localhost:3000";
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
   const appUrl = `${proto}://${host}`;
 
-  // Fire the evaluator agent AFTER this response is sent so the browser
-  // gets an immediate acknowledgement while the agent runs in the background.
+  const internalHeaders = {
+    "Content-Type": "application/json",
+    "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
+  };
+  const agentPayload = JSON.stringify({ audit_input_id: auditId });
+
+  // This after() callback is the single orchestrator for the full audit pipeline.
+  //
+  // Why here and not inside the evaluator:
+  //   On Vercel, a serverless function is terminated as soon as it sends its
+  //   response. Fire-and-forget fetch() calls inside the evaluator get killed
+  //   before they are dispatched. run-audit's after() context stays alive (via
+  //   Vercel waitUntil) so we can safely dispatch downstream agents from here
+  //   after the evaluator has finished.
+  //
+  // Flow:
+  //   1. Await evaluator — this blocks until brand + website eval are saved to DB.
+  //   2. Fire competitor and social agents without awaiting their full responses
+  //      (each runs up to 300s as its own independent serverless invocation).
+  //   3. Hold 3s so Node.js can establish TCP connections and send the request
+  //      bytes before this callback exits and the function terminates.
   after(async () => {
+    // Step 1: run evaluator to completion
+    let evaluatorOk = false;
     try {
-      await fetch(`${appUrl}/api/evaluator_agent`, {
+      const res = await fetch(`${appUrl}/api/evaluator_agent`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
-        },
-        body: JSON.stringify({ audit_input_id: auditId }),
+        headers: internalHeaders,
+        body: agentPayload,
       });
+      evaluatorOk = res.ok;
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.error(`[run-audit] Evaluator returned ${res.status}:`, text.slice(0, 300));
+      }
     } catch (err) {
-      console.error("[run-audit] Failed to trigger evaluator agent:", err);
+      console.error("[run-audit] Evaluator fetch threw:", err);
     }
+
+    if (!evaluatorOk) return;
+
+    // Step 2: fire competitor and social — no await on full responses
+    fetch(`${appUrl}/api/competitor_agent`, {
+      method: "POST",
+      headers: internalHeaders,
+      body: agentPayload,
+    }).catch((err) => console.error("[run-audit] Competitor dispatch failed:", err));
+
+    fetch(`${appUrl}/api/social_media_agent`, {
+      method: "POST",
+      headers: internalHeaders,
+      body: agentPayload,
+    }).catch((err) => console.error("[run-audit] Social dispatch failed:", err));
+
+    // Step 3: hold long enough for TCP + request bytes to be sent
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   });
 
   return Response.json({ success: true });

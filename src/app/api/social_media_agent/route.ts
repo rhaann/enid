@@ -410,13 +410,15 @@ export async function POST(req: NextRequest) {
     // ------------------------------------------------------------------
     const { data: scrapedPages } = await supabaseAdmin
       .from("dlb_audit_scraped_websites")
-      .select("html")
+      .select("html, specific_url")
       .eq("dlb_audit_inputs_id", audit_input_id);
 
     const MAX_HTML_CHARS = 200_000;
     let combinedHtml = (scrapedPages ?? [])
-      .map((p: { html: string }) => p.html ?? "")
-      .join("\n\n");
+      .map((p: { html: string; specific_url: string }) =>
+        `\n\n--- Page: ${p.specific_url} ---\n${p.html ?? ""}`
+      )
+      .join("");
     if (combinedHtml.length > MAX_HTML_CHARS) {
       combinedHtml = combinedHtml.slice(0, MAX_HTML_CHARS) + "\n[truncated]";
     }
@@ -577,13 +579,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 13. Mark Done
+    // 13. Mark Done (workflow_runs only — dlb_audit_inputs.status is owned
+    //     by the evaluator agent and must not be overwritten here)
     // ------------------------------------------------------------------
-    await supabaseAdmin
-      .from("dlb_audit_inputs")
-      .update({ status: "Done", status_updated_at: new Date().toISOString() })
-      .eq("id", audit_input_id);
-
     await completeWorkflowRun(workflowRunId);
 
     return NextResponse.json({
@@ -595,17 +593,8 @@ export async function POST(req: NextRequest) {
       e instanceof Error ? e.message : "An unknown error occurred";
     console.error("[social_media_agent]", errorMessage);
 
-    if (auditInputId) {
-      await supabaseAdmin
-        .from("dlb_audit_inputs")
-        .update({
-          status: "Failed",
-          error_message: errorMessage,
-          status_updated_at: new Date().toISOString(),
-        })
-        .eq("id", auditInputId);
-    }
-
+    // Only update workflow_runs — do not touch dlb_audit_inputs.status, which
+    // is owned by the evaluator agent.
     if (workflowRunId) {
       await completeWorkflowRun(workflowRunId, true, errorMessage);
     }

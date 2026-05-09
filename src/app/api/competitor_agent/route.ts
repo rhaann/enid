@@ -427,7 +427,6 @@ export async function POST(req: NextRequest) {
   }
 
   let workflowRunId: string | null = null;
-  let auditInputId: string | null = null;
 
   try {
     // ------------------------------------------------------------------
@@ -442,8 +441,6 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    auditInputId = audit_input_id;
-
     // ------------------------------------------------------------------
     // 2. Create workflow_runs row
     // ------------------------------------------------------------------
@@ -663,13 +660,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 10. Mark Done
+    // 10. Mark Done (workflow_runs only — dlb_audit_inputs.status is owned
+    //     by the evaluator agent and must not be overwritten here)
     // ------------------------------------------------------------------
-    await supabaseAdmin
-      .from("dlb_audit_inputs")
-      .update({ status: "Done", status_updated_at: new Date().toISOString() })
-      .eq("id", audit_input_id);
-
     await supabaseAdmin
       .from("workflow_runs")
       .update({ status: "Done", completed_at: new Date().toISOString() })
@@ -684,17 +677,8 @@ export async function POST(req: NextRequest) {
       e instanceof Error ? e.message : "An unknown error occurred";
     console.error("[competitor_agent]", errorMessage);
 
-    if (auditInputId) {
-      await supabaseAdmin
-        .from("dlb_audit_inputs")
-        .update({
-          status: "Failed",
-          error_message: errorMessage,
-          status_updated_at: new Date().toISOString(),
-        })
-        .eq("id", auditInputId);
-    }
-
+    // Only update workflow_runs — do not touch dlb_audit_inputs.status, which
+    // is owned by the evaluator agent.
     if (workflowRunId) {
       await supabaseAdmin
         .from("workflow_runs")
