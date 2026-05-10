@@ -39,12 +39,30 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
 
   function computePending(a: AuditReport): string[] {
     const activeAgents = a.activeAgents ?? [];
+    const status = a.auditStatus?.toLowerCase();
     const pending: string[] = [];
-    // Pending = actively running OR no result/error yet (agent may not have started yet)
-    if (activeAgents.includes("social-media-agent") || (!a.socialMediaReport && !a.socialMediaError)) {
+
+    // A section is only pending if its agent is actively running, OR the evaluator
+    // hasn't finished dispatching sub-agents yet, OR the audit is recent enough
+    // that the agent may still be starting up (covers the brief gap between the
+    // evaluator finishing and the sub-agent appearing in activeAgents).
+    // After 15 minutes with no data, we stop spinning — the pipeline has had
+    // enough time to complete and the missing data won't arrive.
+    const evaluatorRunning = !status || status === "in progress";
+    const isRecent =
+      !!a.createdAt &&
+      Date.now() - new Date(a.createdAt).getTime() < 15 * 60 * 1000;
+
+    if (
+      activeAgents.includes("social-media-agent") ||
+      (!a.socialMediaReport && !a.socialMediaError && (evaluatorRunning || isRecent))
+    ) {
       pending.push("social");
     }
-    if (activeAgents.includes("competitor-agent") || (!a.competitorReport && !a.competitorError)) {
+    if (
+      activeAgents.includes("competitor-agent") ||
+      (!a.competitorReport && !a.competitorError && (evaluatorRunning || isRecent))
+    ) {
       pending.push("competitors");
     }
     return pending;

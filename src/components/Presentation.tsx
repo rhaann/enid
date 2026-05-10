@@ -126,10 +126,16 @@ export function Presentation({ items, className, initialIndex = 0 }: Presentatio
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               className="w-full"
             >
-              <div className={`overflow-hidden rounded-xl shadow-2xl flex flex-col ${current?.tall ? "h-[63vh]" : current?.wide ? "h-[52vh]" : "h-[60vh]"}`} style={{ backgroundColor: palette.navy }}>
-                <div className="relative p-7 sm:p-9 md:p-12 h-full flex flex-col">
-                  {/* Header */}
-                  <div className="flex items-start justify-between gap-6 mb-6 flex-shrink-0">
+              <div
+                className={`rounded-xl shadow-2xl overflow-y-auto custom-scrollbar ${current?.tall ? "max-h-[63vh]" : current?.wide ? "max-h-[52vh]" : "max-h-[60vh]"}`}
+                style={{ backgroundColor: palette.navy }}
+              >
+                <div className="relative p-7 sm:p-9 md:p-12">
+                  {/* Sticky header so it stays visible when scrolling */}
+                  <div
+                    className="sticky top-0 z-10 flex items-start justify-between gap-6 mb-6 pb-1"
+                    style={{ backgroundColor: palette.navy }}
+                  >
                     <div className="flex-1">
                       <h2 className="text-xl sm:text-2xl md:text-3xl font-semibold" style={{ color: palette.white }}>
                         {current?.title}
@@ -150,11 +156,9 @@ export function Presentation({ items, className, initialIndex = 0 }: Presentatio
                     )}
                   </div>
 
-                  {/* Scrollable Content */}
-                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0 flex flex-col">
-                    <div className="text-sm sm:text-[15px] md:text-base leading-6 sm:leading-7 flex-1 flex flex-col" style={{ color: palette.white }}>
-                      {current?.content}
-                    </div>
+                  {/* Content — flows naturally; card outer scrolls when it exceeds max-h */}
+                  <div className="text-sm sm:text-[15px] md:text-base leading-6 sm:leading-7" style={{ color: palette.white }}>
+                    {current?.content}
                   </div>
                 </div>
               </div>
@@ -246,17 +250,17 @@ export function Presentation({ items, className, initialIndex = 0 }: Presentatio
 
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
+          width: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
           background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.3);
-          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.15);
+          border-radius: 999px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.5);
+          background: rgba(255, 255, 255, 0.35);
         }
       `}</style>
     </div>

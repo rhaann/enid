@@ -82,6 +82,7 @@ export async function POST(req: Request) {
     if (!evaluatorOk) return;
 
     // Step 2: fire competitor and social — no await on full responses
+    console.log("[run-audit] Dispatching competitor and social agents");
     fetch(`${appUrl}/api/competitor_agent`, {
       method: "POST",
       headers: internalHeaders,

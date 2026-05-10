@@ -114,7 +114,7 @@ export default function WebsiteReportNoId() {
     },
     {
       id: "accessibility",
-      title: "Accessibility & Contrast",
+      title: "Readability & Inclusivity",
       content: renderWebsiteContent(
         web.accessibility?.assessment,
         web.accessibility?.whatsWorking,

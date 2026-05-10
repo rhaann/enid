@@ -348,7 +348,7 @@ export async function POST(req: NextRequest) {
           websiteEvalResult["Brand Expression & Visual Execution"] ?? null,
         messaging_and_clarity: websiteEvalResult["Messaging & Clarity"] ?? null,
         ux_navigation: websiteEvalResult["UX & Navigation"] ?? null,
-        accessibility_and_contrast: websiteEvalResult["Accessibility & Contrast"] ?? null,
+        accessibility_and_contrast: websiteEvalResult["Readability & Inclusivity"] ?? null,
         ctas_trust_and_conversion: websiteEvalResult["CTAs, Trust & Conversion"] ?? null,
         social_consistency_check: websiteEvalResult["Social Consistency Check"] ?? null,
         risk_and_confidence_framing: websiteEvalResult["Risk and Confidence Framing"] ?? null,

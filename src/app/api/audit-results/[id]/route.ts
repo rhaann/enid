@@ -136,7 +136,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // state for each agent (an agent may have multiple rows if retried).
     const { data: workflowRuns } = await supabase()
       .from("workflow_runs")
-      .select("workflow_name, status, error_message")
+      .select("workflow_name, status, error_message, created_at")
       .eq("audit_input_id", id)
       .in("status", ["In Progress", "Failed"])
       .order("created_at", { ascending: false });
@@ -145,12 +145,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const errorByAgent: Record<string, string> = {};
     const seenAgents = new Set<string>();
 
+    // maxDuration for sub-agents is 300s. Any "In Progress" row older than
+    // 10 minutes was never cleaned up — Vercel killed the function before it
+    // could mark itself Done or Failed. Treat these as timed out.
+    const STALE_MS = 10 * 60 * 1000;
+    const now = Date.now();
+
     for (const run of workflowRuns ?? []) {
       // Only record the first (most recent) entry per agent name.
       if (!seenAgents.has(run.workflow_name)) {
         seenAgents.add(run.workflow_name);
         if (run.status === "In Progress") {
-          activeAgents.push(run.workflow_name);
+          const age = now - new Date(run.created_at).getTime();
+          if (age < STALE_MS) {
+            activeAgents.push(run.workflow_name);
+          } else {
+            // Stale — treat as a silent timeout so the UI stops spinning.
+            errorByAgent[run.workflow_name] = "The agent did not complete in time. Try running the audit again.";
+          }
         } else if (run.status === "Failed") {
           errorByAgent[run.workflow_name] = run.error_message ?? "An unknown error occurred";
         }

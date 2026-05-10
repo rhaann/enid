@@ -161,8 +161,17 @@ interface ExaResult {
  * @param numResults - How many URLs to request from EXA.
  * @returns Array of discovered URLs (may be shorter than numResults).
  */
-async function searchExa(query: string, numResults: number): Promise<string[]> {
+async function searchExa(
+  query: string,
+  numResults: number,
+  excludeDomains: string[] = []
+): Promise<string[]> {
   if (numResults <= 0) return [];
+
+  const body: Record<string, unknown> = { query, numResults, type: "auto" };
+  if (excludeDomains.length > 0) {
+    body.excludeDomains = excludeDomains;
+  }
 
   const res = await fetch("https://api.exa.ai/search", {
     method: "POST",
@@ -170,7 +179,7 @@ async function searchExa(query: string, numResults: number): Promise<string[]> {
       "Content-Type": "application/json",
       "x-api-key": process.env.EXA_API_KEY!,
     },
-    body: JSON.stringify({ query, numResults, type: "auto" }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -298,17 +307,17 @@ async function analyzeCompetitor(
     `Initial Competitor Type: ${competitor_type}`,
     `Client Location: ${clientLocation}`,
     "",
-    "Scraped HTML (truncated to 40,000 chars):",
-    scraped_html.slice(0, 40_000) || "Website could not be scraped",
+    "Scraped HTML (truncated to 30,000 chars):",
+    scraped_html.slice(0, 30_000) || "Website could not be scraped",
   ].join("\n");
 
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: userContent },
   ];
 
-  // Allow up to 12 turns to accommodate per-field Tavily lookups
-  // (3 missing fields × 1 search each + a few buffer turns).
-  const MAX_TURNS = 12;
+  // Allow up to 8 turns: 1 initial response + 1 Tavily search for location + 1
+  // follow-up = 3 turns needed in the typical case. 8 gives a generous buffer.
+  const MAX_TURNS = 8;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response = await anthropic.messages.create({
@@ -441,6 +450,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    console.log(`[competitor_agent] Starting for audit ${audit_input_id}`);
     // ------------------------------------------------------------------
     // 2. Create workflow_runs row
     // ------------------------------------------------------------------
@@ -534,15 +544,15 @@ export async function POST(req: NextRequest) {
 
     let targets: CompetitorTarget[] = [];
 
-    if (confirmedUrls.length >= 6) {
-      // Case A: client provided 6+ URLs — use first 6, skip EXA entirely.
+    if (confirmedUrls.length >= 4) {
+      // Case A: client provided 4+ URLs — use first 4, skip EXA entirely.
       // Claude will determine the correct type based on actual location.
       targets = confirmedUrls
-        .slice(0, 6)
+        .slice(0, 4)
         .map((url) => ({ url, competitor_type: "national" as const }));
     } else if (confirmedUrls.length >= 1) {
-      // Case B: 1–5 confirmed URLs — top up with EXA.
-      const needed = 6 - confirmedUrls.length;
+      // Case B: 1–3 confirmed URLs — top up with EXA.
+      const needed = 4 - confirmedUrls.length;
       const localCount = Math.floor(needed / 3);
       const nationalCount = Math.floor(needed / 3);
       const globalCount = needed - localCount - nationalCount;
@@ -555,8 +565,9 @@ export async function POST(req: NextRequest) {
         { type: "global" as const, count: globalCount, suffix: "international competitor" },
       ] as SearchEntry[]).filter((s) => s.count > 0);
 
+      const exaExclude = ownDomain ? [ownDomain] : [];
       const exaResults = await Promise.all(
-        searchPlan.map((s) => searchExa(`${exaQuery} ${s.suffix}`, s.count))
+        searchPlan.map((s) => searchExa(`${exaQuery} ${s.suffix}`, s.count, exaExclude))
       );
 
       targets = [
@@ -572,13 +583,14 @@ export async function POST(req: NextRequest) {
         ),
       ];
     } else {
-      // Case C: no confirmed URLs — run 3 parallel EXA searches (4 each so
-      // we have buffer after deduplication, aiming for 2 per type).
+      // Case C: no confirmed URLs — run 3 parallel EXA searches (3 each so
+      // we have buffer after deduplication, aiming for ~1-2 per type).
       const cityStr = clientCity || "worldwide";
+      const exaExclude = ownDomain ? [ownDomain] : [];
       const [localUrls, nationalUrls, globalUrls] = await Promise.all([
-        searchExa(`${exaQuery} competitor based in ${cityStr}`, 4),
-        searchExa(`${exaQuery} competitor in same country different city`, 4),
-        searchExa(`${exaQuery} international competitor`, 4),
+        searchExa(`${exaQuery} competitor based in ${cityStr}`, 3, exaExclude),
+        searchExa(`${exaQuery} competitor in same country different city`, 3, exaExclude),
+        searchExa(`${exaQuery} international competitor`, 3, exaExclude),
       ]);
 
       targets = [
@@ -595,7 +607,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Dedupe by domain and drop the client's own domain.
-    targets = dedupeAndLimit(targets, ownDomain, 6);
+    targets = dedupeAndLimit(targets, ownDomain, 4);
+    console.log(`[competitor_agent] ${targets.length} targets after dedup:`, targets.map((t) => t.url));
 
     if (targets.length === 0) {
       throw new Error(
@@ -625,17 +638,61 @@ export async function POST(req: NextRequest) {
 
     // ------------------------------------------------------------------
     // 8. Analyse all competitors in parallel via Claude + Tavily tool use
+    //    Use allSettled so one bad URL doesn't kill the whole batch.
     // ------------------------------------------------------------------
-    const analyses = await Promise.all(
+    console.log(`[competitor_agent] Analysing ${scrapedTargets.length} competitors in parallel`);
+    const settledAnalyses = await Promise.allSettled(
       scrapedTargets.map((t) =>
         analyzeCompetitor(t.url, t.competitor_type, t.html, clientLocation)
       )
     );
 
+    const analyses = settledAnalyses
+      .map((r, i) => {
+        if (r.status === "fulfilled") return r.value;
+        console.warn(
+          `[competitor_agent] Analysis failed for ${scrapedTargets[i].url}:`,
+          r.reason instanceof Error ? r.reason.message : String(r.reason)
+        );
+        return null;
+      })
+      .filter((r): r is CompetitorResult => r !== null);
+
+    if (analyses.length === 0) {
+      throw new Error(
+        "All competitor analyses failed. Check Anthropic/Tavily API keys and logs."
+      );
+    }
+
+    // Post-analysis dedup: remove the client's own company if it slipped through
+    // (happens when ownDomain is empty or EXA returned a subdomain/alternate URL),
+    // and deduplicate by normalized company_url domain in case two URLs resolved
+    // to the same company.
+    const postSeenDomains = new Set<string>();
+    if (ownDomain) postSeenDomains.add(ownDomain);
+
+    const dedupedAnalyses = analyses.filter((r) => {
+      const domain = normalizeDomain(r.company_url);
+      if (!domain || postSeenDomains.has(domain)) {
+        console.warn(`[competitor_agent] Post-analysis dedup removed duplicate/own-company: ${r.company_url}`);
+        return false;
+      }
+      postSeenDomains.add(domain);
+      return true;
+    });
+
+    if (dedupedAnalyses.length === 0) {
+      throw new Error(
+        "All competitor results were the client's own company or duplicates. EXA may have returned the client's own URLs."
+      );
+    }
+
+    console.log(`[competitor_agent] ${dedupedAnalyses.length}/${scrapedTargets.length} analyses succeeded`);
+
     // ------------------------------------------------------------------
     // 9. Save each result to dlb_competitor_agent_results
     // ------------------------------------------------------------------
-    for (const result of analyses) {
+    for (const result of dedupedAnalyses) {
       const { error: insertError } = await supabaseAdmin
         .from("dlb_competitor_agent_results")
         .insert({
@@ -668,9 +725,10 @@ export async function POST(req: NextRequest) {
       .update({ status: "Done", completed_at: new Date().toISOString() })
       .eq("id", workflowRunId);
 
+    console.log(`[competitor_agent] Done — saved ${dedupedAnalyses.length} competitors for audit ${audit_input_id}`);
     return NextResponse.json({
       success: true,
-      competitors_analyzed: analyses.length,
+      competitors_analyzed: dedupedAnalyses.length,
     });
   } catch (e) {
     const errorMessage =

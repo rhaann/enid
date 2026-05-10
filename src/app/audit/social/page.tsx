@@ -19,16 +19,53 @@ export default function SocialMediaReportPage() {
 
   if (!sm) {
     const errorMsg = audit.socialMediaError;
+    const isLoading =
+      (audit.activeAgents ?? []).includes("social-media-agent") ||
+      audit.auditStatus === "In Progress";
+
+    // Loading — agent is actively running
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center py-24">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center shadow-sm max-w-md w-full">
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-zinc-200 border-t-[#17bfca]" />
+            <h2 className="text-xl font-semibold text-zinc-900 mb-2">Analyzing Social Media</h2>
+            <p className="text-zinc-500 text-sm mb-4">
+              Reviewing your social presence across platforms. This usually takes 1–3 minutes.
+            </p>
+            <div className="w-full h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+              <div className="h-full w-1/2 rounded-full bg-[#17bfca] animate-pulse" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Failed — agent returned an error
+    if (errorMsg) {
+      return (
+        <div className="flex items-center justify-center py-24">
+          <div className="rounded-2xl border border-red-200 bg-white p-10 text-center shadow-sm max-w-md">
+            <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <span className="text-red-600 text-lg font-bold">!</span>
+            </div>
+            <h2 className="text-xl font-semibold text-zinc-900 mb-2">Social Media Audit Failed</h2>
+            <p className="text-zinc-600 text-sm">{errorMsg}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Nothing found — agent ran but returned no results
     return (
       <div className="flex items-center justify-center py-24">
         <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center shadow-sm max-w-md">
-          <h2 className="text-xl font-semibold text-zinc-900 mb-2">
-            {errorMsg ? "Social Media Audit Failed" : "Social Media Audit Not Available"}
-          </h2>
-          <p className="text-zinc-600">
-            {errorMsg
-              ? errorMsg
-              : "Social media data was not returned for this audit. This may happen if no social media URLs were provided or if the workflow is still processing."}
+          <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100">
+            <span className="text-zinc-400 text-lg">—</span>
+          </div>
+          <h2 className="text-xl font-semibold text-zinc-900 mb-2">No Social Media Data Found</h2>
+          <p className="text-zinc-600 text-sm">
+            The social media agent ran but could not find any active profiles for this company. Make sure social media URLs are visible on the website and try running the audit again.
           </p>
         </div>
       </div>

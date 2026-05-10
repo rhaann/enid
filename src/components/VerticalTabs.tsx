@@ -29,7 +29,7 @@ export function VerticalTabs({ items, className }: VerticalTabsProps) {
   }
 
   return (
-    <div className={`flex items-stretch h-full ${className || ""}`}>
+    <div className={`flex items-stretch ${className || ""}`}>
       {/* Active Tab Content (Left) */}
       <div className="flex-1 bg-white/10 rounded-l-lg p-3">
         <div className="flex items-start justify-between gap-3 mb-1">

@@ -27,5 +27,11 @@ export async function fetchAuditById(id: string): Promise<AuditReport> {
   if (json.activeAgents) {
     report.activeAgents = json.activeAgents;
   }
+  if (typeof json.competitor_error === "string") {
+    report.competitorError = json.competitor_error;
+  }
+  if (typeof json.social_error === "string") {
+    report.socialMediaError = json.social_error;
+  }
   return report;
 }

@@ -829,7 +829,7 @@ const AuditPDFDocument = ({ audit }: { audit: AuditReport }) => {
 
         <WebsiteSectionItem
           number={5}
-          title="Accessibility"
+          title="Readability & Inclusivity"
           assessment={websiteReport.accessibility?.assessment || ""}
           whatsWorking={websiteReport.accessibility?.whatsWorking}
           whatsNeedsAttention={websiteReport.accessibility?.whatsNeedsAttention}

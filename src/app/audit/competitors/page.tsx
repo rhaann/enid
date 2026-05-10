@@ -10,16 +10,56 @@ export default function CompetitorResearchPage() {
 
   if (!cr || cr.competitors.length === 0) {
     const errorMsg = audit.competitorError;
+    // Loading: competitor agent is actively running, OR the evaluator hasn't finished
+    // yet (competitor hasn't been dispatched). Once auditStatus is "done" and the
+    // competitor agent is no longer in activeAgents, it has finished (or never ran).
+    const isLoading =
+      (audit.activeAgents ?? []).includes("competitor-agent") ||
+      audit.auditStatus === "In Progress";
+
+    // Loading — agent is actively running
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center py-24">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center shadow-sm max-w-md w-full">
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-zinc-200 border-t-[#17bfca]" />
+            <h2 className="text-xl font-semibold text-zinc-900 mb-2">Analyzing Competitors</h2>
+            <p className="text-zinc-500 text-sm mb-4">
+              Researching your competitive landscape. This usually takes 1–3 minutes.
+            </p>
+            <div className="w-full h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+              <div className="h-full w-1/2 rounded-full bg-[#17bfca] animate-pulse" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Failed — agent returned an error
+    if (errorMsg) {
+      return (
+        <div className="flex items-center justify-center py-24">
+          <div className="rounded-2xl border border-red-200 bg-white p-10 text-center shadow-sm max-w-md">
+            <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+              <span className="text-red-600 text-lg font-bold">!</span>
+            </div>
+            <h2 className="text-xl font-semibold text-zinc-900 mb-2">Competitor Research Failed</h2>
+            <p className="text-zinc-600 text-sm">{errorMsg}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Nothing found — agent ran but returned no results
     return (
       <div className="flex items-center justify-center py-24">
         <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center shadow-sm max-w-md">
-          <h2 className="text-xl font-semibold text-zinc-900 mb-2">
-            {errorMsg ? "Competitor Research Failed" : "Competitor Research Not Available"}
-          </h2>
-          <p className="text-zinc-600">
-            {errorMsg
-              ? errorMsg
-              : "Competitor research data was not returned for this audit. This may happen if no competitor URLs were provided or if the workflow is still processing."}
+          <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100">
+            <span className="text-zinc-400 text-lg">—</span>
+          </div>
+          <h2 className="text-xl font-semibold text-zinc-900 mb-2">No Competitors Found</h2>
+          <p className="text-zinc-600 text-sm">
+            The competitor research agent ran but could not identify any competitors for this company. Try adding competitor URLs manually and running the audit again.
           </p>
         </div>
       </div>
@@ -41,10 +81,10 @@ export default function CompetitorResearchPage() {
 
   const count = cr.competitors.length;
   const landscapeSummary = cr.landscapeSummary
-    || (count === 5
+    || (count >= 4
       ? `We identified ${count} competitors operating in your space.`
       : count > 0
-        ? `We found ${count} competitor${count > 1 ? "s" : ""} in your space. Finding all 5 was difficult — the market may be niche or data was limited.`
+        ? `We found ${count} competitor${count > 1 ? "s" : ""} in your space. Finding all 4 was difficult — the market may be niche or data was limited.`
         : `We had trouble identifying competitors for this company. Consider providing competitor URLs manually.`);
 
   const items: PresentationItem[] = [];
@@ -122,9 +162,7 @@ export default function CompetitorResearchPage() {
       id: `competitor-${comp.companyName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
       title: comp.companyName,
       content: (
-        <div className="flex-1 flex flex-col">
-          <VerticalTabs items={detailTabs} className="min-h-[120px]" />
-        </div>
+        <VerticalTabs items={detailTabs} />
       ),
       rightMeta: (
         <div className="text-right">
