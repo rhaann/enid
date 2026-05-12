@@ -26,7 +26,7 @@ export const maxDuration = 300;
 
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendSnapshotEmail, sendAdminFailureAlert } from "@/lib/brevo";
+import { sendSnapshotEmail, sendAdminFailureAlert } from "@/lib/email";
 
 // ---------------------------------------------------------------------------
 // Route handler
