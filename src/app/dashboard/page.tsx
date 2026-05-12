@@ -1272,6 +1272,8 @@ export default function DashboardPage() {
   const [sortField, setSortField] = useState<SortField>("submittedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
 
@@ -1297,6 +1299,25 @@ export default function DashboardPage() {
   );
 
   const handleClosePanel = useCallback(() => setSelectedId(null), []);
+
+  async function handleDeleteAudit() {
+    if (!deleteConfirmId) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/audits/${deleteConfirmId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error ?? "Failed to delete audit.");
+      }
+      setAudits((prev) => prev.filter((a) => a.id !== deleteConfirmId));
+      if (selectedId === deleteConfirmId) setSelectedId(null);
+      setDeleteConfirmId(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete audit.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { not_started: 0, in_progress: 0, done: 0, failed: 0 };
@@ -1592,13 +1613,25 @@ export default function DashboardPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedId(row.id)}
-                              className="inline-flex rounded-lg border border-zinc-300 bg-white px-4 py-1.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
-                            >
-                              Open
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedId(row.id)}
+                                className="inline-flex rounded-lg border border-zinc-300 bg-white px-4 py-1.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
+                              >
+                                Open
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(row.id); }}
+                                className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-500"
+                                aria-label="Delete audit"
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1684,6 +1717,43 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      {deleteConfirmId && (
+        <OverlayDialog
+          open={!!deleteConfirmId}
+          size="md"
+          onClose={() => setDeleteConfirmId(null)}
+          title="Delete Audit"
+          tone="danger"
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmId(null)}
+                disabled={deleting}
+                className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAudit}
+                disabled={deleting}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-zinc-700">
+            This will <strong>permanently delete</strong> the audit for{" "}
+            <strong>{audits.find((a) => a.id === deleteConfirmId)?.companyName ?? "this client"}</strong>{" "}
+            and all associated data. This cannot be undone.
+          </p>
+        </OverlayDialog>
+      )}
 
       {/* Detail side panel */}
       {selectedAudit && (

@@ -9,6 +9,7 @@ const RESULT_TABLES: { table: string; column: string }[] = [
   { table: "dlb_social_media_agent_results", column: "audit_input_id" },
   { table: "dlb_competitor_agent_results", column: "dlb_audit_inputs_id" },
   { table: "dlb_audit_scraped_websites", column: "dlb_audit_inputs_id" },
+  { table: "dlb_snapshot_results", column: "audit_input_id" },
   { table: "workflow_runs", column: "audit_input_id" },
 ];
 
