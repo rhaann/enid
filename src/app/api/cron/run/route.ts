@@ -51,11 +51,17 @@ export async function GET(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Derive app URL from the incoming request headers — works in both
-  // local dev and Vercel without needing a hardcoded env var.
-  const host = req.headers.get("host") ?? "localhost:3000";
-  const proto = req.headers.get("x-forwarded-proto") ?? "http";
-  const appUrl = `${proto}://${host}`;
+  // Use APP_URL env var (production domain) so internal fetches always hit
+  // the production deployment and bypass Vercel preview protection.
+  // Falls back to deriving from request headers for local dev.
+  const appUrl = process.env.APP_URL
+    ?? (() => {
+      const host = req.headers.get("host") ?? "localhost:3000";
+      const proto = req.headers.get("x-forwarded-proto") ?? "http";
+      return `${proto}://${host}`;
+    })();
+
+  console.log(`[cron] appUrl: ${appUrl}`);
 
   const internalSecret = process.env.INTERNAL_API_SECRET ?? "";
   console.log(`[cron] INTERNAL_API_SECRET set: ${!!internalSecret}, length: ${internalSecret.length}, first4: ${internalSecret.slice(0, 4)}`);
