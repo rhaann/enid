@@ -331,10 +331,16 @@ function parseSnapshotJson(raw: string): SnapshotResult {
 
 /** POST /api/snapshot_agent */
 export async function POST(req: NextRequest) {
-  // Auth: admin only
-  const admin = await requireAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  // Auth: admin session or internal server-to-server secret
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  const isInternal =
+    internalSecret && req.headers.get("x-internal-secret") === internalSecret;
+
+  if (!isInternal) {
+    const admin = await requireAdmin();
+    if (!admin) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
   }
 
   // Parse body
