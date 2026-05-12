@@ -1,14 +1,20 @@
 /**
  * @file route.ts
  * POST /api/snapshot_agent
+ * DELETE /api/snapshot_agent
  *
  * Snapshot Agent — generates a concise executive Brand Snapshot PDF for a
  * completed audit. The route:
- *   1. Fetches all available audit result rows from Supabase.
- *   2. Calculates the Enid Score (plain TypeScript average of all numeric scores).
- *   3. Runs two Tavily searches to determine SEO / visibility presence.
- *   4. Calls Claude (claude-sonnet-4-6) to synthesise the structured snapshot.
- *   5. Renders a PDF with @react-pdf/renderer and returns it as a download.
+ *   1. Checks dlb_snapshot_results for a cached synthesis — if found, skips
+ *      steps 2-4 and goes straight to PDF rendering.
+ *   2. Fetches all available audit result rows from Supabase.
+ *   3. Calculates the Enid Score (plain TypeScript average of all numeric scores).
+ *   4. Runs two Tavily searches to determine SEO / visibility presence.
+ *   5. Calls Claude (claude-sonnet-4-6) to synthesise the structured snapshot.
+ *   6. Saves the synthesis to dlb_snapshot_results for future requests.
+ *   7. Renders a PDF with @react-pdf/renderer and returns it as a download.
+ *
+ * DELETE clears the cached snapshot row so the next POST triggers a fresh run.
  *
  * Auth: requires an admin browser session (requireAdmin).
  */
@@ -351,36 +357,22 @@ export async function POST(req: NextRequest) {
 
   try {
     // ------------------------------------------------------------------
-    // Step 1: Fetch all audit data concurrently
+    // Step 1: Fetch audit input + check for cached snapshot concurrently
     // ------------------------------------------------------------------
-    const [inputResult, websiteResult, brandResult, socialResult, competitorResult] =
-      await Promise.allSettled([
-        supabaseAdmin
-          .from("dlb_audit_inputs")
-          .select("*")
-          .eq("id", audit_input_id)
-          .single(),
-        supabaseAdmin
-          .from("dlb_website_eval_results")
-          .select("*")
-          .eq("dlb_audit_inputs_id", audit_input_id)
-          .single(),
-        supabaseAdmin
-          .from("dlb_brand_eval_results")
-          .select("*")
-          .eq("dlb_audit_input_id", audit_input_id)
-          .single(),
-        supabaseAdmin
-          .from("dlb_social_media_agent_results")
-          .select("*")
-          .eq("audit_input_id", audit_input_id),
-        supabaseAdmin
-          .from("dlb_competitor_agent_results")
-          .select("*")
-          .eq("dlb_audit_inputs_id", audit_input_id),
-      ]);
+    const [inputResult, cachedResult] = await Promise.allSettled([
+      supabaseAdmin
+        .from("dlb_audit_inputs")
+        .select("*")
+        .eq("id", audit_input_id)
+        .single(),
+      supabaseAdmin
+        .from("dlb_snapshot_results")
+        .select("*")
+        .eq("audit_input_id", audit_input_id)
+        .single(),
+    ]);
 
-    // Audit input is required — everything else is optional (may not have run)
+    // Audit input is always required
     if (inputResult.status === "rejected" || !inputResult.value.data) {
       return NextResponse.json(
         { error: `Audit input not found for ID: ${audit_input_id}` },
@@ -389,95 +381,152 @@ export async function POST(req: NextRequest) {
     }
 
     const auditInput = inputResult.value.data as Record<string, unknown>;
-    const websiteRow =
-      websiteResult.status === "fulfilled" && websiteResult.value.data
-        ? (websiteResult.value.data as Record<string, unknown>)
-        : null;
-    const brandRow =
-      brandResult.status === "fulfilled" && brandResult.value.data
-        ? (brandResult.value.data as Record<string, unknown>)
-        : null;
-    const socialRows: Record<string, unknown>[] =
-      socialResult.status === "fulfilled" && socialResult.value.data
-        ? (socialResult.value.data as Record<string, unknown>[])
-        : [];
-    const competitorRows: Record<string, unknown>[] =
-      competitorResult.status === "fulfilled" && competitorResult.value.data
-        ? (competitorResult.value.data as Record<string, unknown>[])
-        : [];
-
     const companyName = String(auditInput["name"] ?? "Unknown Company");
     const companyUrl = String(auditInput["url"] ?? "");
 
     // ------------------------------------------------------------------
-    // Step 2: Calculate Enid Score (plain TypeScript — no LLM)
+    // Cache hit: skip Tavily + Claude, go straight to PDF rendering
     // ------------------------------------------------------------------
-    const enidScore = calculateEnidScore(websiteRow, brandRow, socialRows);
+    const cachedRow =
+      cachedResult.status === "fulfilled" && cachedResult.value.data
+        ? (cachedResult.value.data as Record<string, unknown>)
+        : null;
 
-    // ------------------------------------------------------------------
-    // Step 3: SEO visibility check via Tavily
-    // ------------------------------------------------------------------
+    let enidScore: number;
     let seoVisibility: SeoVisibility;
-    try {
-      seoVisibility = await checkSeoVisibility(companyName, companyUrl);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "SEO check failed";
-      console.error("[snapshot_agent] SEO check error:", msg);
-      // Graceful fallback — visibility unknown
-      seoVisibility = {
-        websiteVisible: false,
-        socialVisible: false,
-        pressVisible: false,
-        visibilityScore: "Weak",
-      };
+    let snapshotResult: SnapshotResult;
+    let createdAt: string;
+
+    if (cachedRow) {
+      console.log("[snapshot_agent] Cache hit — serving from dlb_snapshot_results");
+      enidScore = Number(cachedRow["enid_score"] ?? 0);
+      seoVisibility = cachedRow["seo_visibility"] as SeoVisibility;
+      snapshotResult = cachedRow["synthesis"] as SnapshotResult;
+      createdAt = String(cachedRow["created_at"] ?? new Date().toISOString());
+    } else {
+      // ----------------------------------------------------------------
+      // Cache miss: fetch all audit data and run full pipeline
+      // ----------------------------------------------------------------
+
+      // Step 2: Fetch eval results concurrently
+      const [websiteResult, brandResult, socialResult, competitorResult] =
+        await Promise.allSettled([
+          supabaseAdmin
+            .from("dlb_website_eval_results")
+            .select("*")
+            .eq("dlb_audit_inputs_id", audit_input_id)
+            .single(),
+          supabaseAdmin
+            .from("dlb_brand_eval_results")
+            .select("*")
+            .eq("dlb_audit_input_id", audit_input_id)
+            .single(),
+          supabaseAdmin
+            .from("dlb_social_media_agent_results")
+            .select("*")
+            .eq("audit_input_id", audit_input_id),
+          supabaseAdmin
+            .from("dlb_competitor_agent_results")
+            .select("*")
+            .eq("dlb_audit_inputs_id", audit_input_id),
+        ]);
+
+      const websiteRow =
+        websiteResult.status === "fulfilled" && websiteResult.value.data
+          ? (websiteResult.value.data as Record<string, unknown>)
+          : null;
+      const brandRow =
+        brandResult.status === "fulfilled" && brandResult.value.data
+          ? (brandResult.value.data as Record<string, unknown>)
+          : null;
+      const socialRows: Record<string, unknown>[] =
+        socialResult.status === "fulfilled" && socialResult.value.data
+          ? (socialResult.value.data as Record<string, unknown>[])
+          : [];
+      const competitorRows: Record<string, unknown>[] =
+        competitorResult.status === "fulfilled" && competitorResult.value.data
+          ? (competitorResult.value.data as Record<string, unknown>[])
+          : [];
+
+      // Step 3: Calculate Enid Score (plain TypeScript — no LLM)
+      enidScore = calculateEnidScore(websiteRow, brandRow, socialRows);
+
+      // Step 4: SEO visibility check via Tavily
+      try {
+        seoVisibility = await checkSeoVisibility(companyName, companyUrl);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "SEO check failed";
+        console.error("[snapshot_agent] SEO check error:", msg);
+        seoVisibility = {
+          websiteVisible: false,
+          socialVisible: false,
+          pressVisible: false,
+          visibilityScore: "Weak",
+        };
+      }
+
+      // Step 5: Call Claude snapshot agent
+      const userMessage = JSON.stringify(
+        {
+          company_info: auditInput,
+          website_eval: websiteRow ?? "Not available",
+          brand_eval: brandRow ?? "Not available",
+          social_media_results:
+            socialRows.length > 0 ? socialRows : "Not available",
+          competitor_results:
+            competitorRows.length > 0 ? competitorRows : "Not available",
+          enid_score: enidScore,
+          seo_visibility: seoVisibility,
+        },
+        null,
+        2
+      );
+
+      let claudeResponse: Anthropic.Message;
+      try {
+        claudeResponse = await anthropic.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 2048,
+          system: SNAPSHOT_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: userMessage }],
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Claude API call failed";
+        throw new Error(`Snapshot agent Claude call failed: ${msg}`);
+      }
+
+      const rawText = claudeResponse.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
+      snapshotResult = parseSnapshotJson(rawText);
+      createdAt = new Date().toISOString();
+
+      // Step 6: Save synthesis to cache for future requests
+      const { error: saveError } = await supabaseAdmin
+        .from("dlb_snapshot_results")
+        .insert({
+          audit_input_id,
+          enid_score: enidScore,
+          seo_visibility: seoVisibility,
+          synthesis: snapshotResult,
+          created_at: createdAt,
+        });
+
+      if (saveError) {
+        // Non-fatal — log but continue to PDF generation
+        console.error("[snapshot_agent] Failed to cache snapshot result:", saveError.message);
+      }
     }
 
     // ------------------------------------------------------------------
-    // Step 4: Call Claude snapshot agent
-    // ------------------------------------------------------------------
-    const userMessage = JSON.stringify(
-      {
-        company_info: auditInput,
-        website_eval: websiteRow ?? "Not available",
-        brand_eval: brandRow ?? "Not available",
-        social_media_results:
-          socialRows.length > 0 ? socialRows : "Not available",
-        competitor_results:
-          competitorRows.length > 0 ? competitorRows : "Not available",
-        enid_score: enidScore,
-        seo_visibility: seoVisibility,
-      },
-      null,
-      2
-    );
-
-    let claudeResponse: Anthropic.Message;
-    try {
-      claudeResponse = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 2048,
-        system: SNAPSHOT_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Claude API call failed";
-      throw new Error(`Snapshot agent Claude call failed: ${msg}`);
-    }
-
-    const rawText = claudeResponse.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-
-    const snapshotResult = parseSnapshotJson(rawText);
-
-    // ------------------------------------------------------------------
-    // Step 5: Generate PDF and return as download
+    // Step 7: Generate PDF and return as download
     // ------------------------------------------------------------------
     const pdfData: SnapshotPDFData = {
       companyName,
       companyUrl,
-      createdAt: new Date().toISOString(),
+      createdAt,
       enidScore,
       seoVisibility,
       snapshot: snapshotResult,
@@ -568,4 +617,55 @@ export async function POST(req: NextRequest) {
     console.error("[snapshot_agent] Error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/snapshot_agent — reset cached snapshot
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes the cached snapshot row for the given audit so the next POST
+ * triggers a full regeneration (Tavily + Claude).
+ *
+ * Body: { audit_input_id: string }
+ */
+export async function DELETE(req: NextRequest) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  let audit_input_id: string;
+  try {
+    const body = (await req.json()) as { audit_input_id?: string };
+    if (!body.audit_input_id) {
+      return NextResponse.json(
+        { error: "audit_input_id is required." },
+        { status: 400 }
+      );
+    }
+    audit_input_id = body.audit_input_id;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { error } = await supabaseAdmin
+    .from("dlb_snapshot_results")
+    .delete()
+    .eq("audit_input_id", audit_input_id);
+
+  if (error) {
+    console.error("[snapshot_agent] Failed to delete cached snapshot:", error.message);
+    return NextResponse.json(
+      { error: `Failed to reset snapshot: ${error.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ success: true });
 }
