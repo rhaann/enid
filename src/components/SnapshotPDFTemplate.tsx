@@ -50,12 +50,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   sectionHeader: {
-    fontSize: 18,
+    fontSize: 13,
     fontFamily: "Helvetica-Bold",
     color: colors.navy,
-    marginBottom: 16,
-    paddingBottom: 6,
-    borderBottomWidth: 3,
+    marginBottom: 10,
+    paddingBottom: 4,
+    borderBottomWidth: 2,
     borderBottomColor: colors.yellow,
   },
   itemTitle: {
@@ -345,55 +345,80 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
         {/* ---------------------------------------------------------------- */}
         {/* 1. YOUR ENID SCORE                                               */}
         {/* ---------------------------------------------------------------- */}
-        <Text style={styles.sectionHeader}>YOUR ENID SCORE</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionHeader}>YOUR ENID SCORE</Text>
 
-        <Text
-          style={{
-            fontSize: 48,
-            fontFamily: "Helvetica-Bold",
-            color: colors.navy,
-            textAlign: "center",
-            marginBottom: 8,
-          }}
-        >
-          {enidScore}
-        </Text>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: "#f0f4f7",
+              borderRadius: 8,
+              padding: 12,
+              marginBottom: 4,
+            }}
+          >
+            {/* Score bubble */}
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                backgroundColor: band.color,
+                borderRadius: 6,
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                marginRight: 12,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontFamily: "Helvetica-Bold",
+                  color: colors.white,
+                }}
+              >
+                {enidScore}
+              </Text>
+            </View>
 
-        <View style={{ alignItems: "center", marginBottom: 8 }}>
-          <Stars score={enidScore} />
+            {/* Label + stars + context */}
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Helvetica-Bold",
+                  color: colors.navy,
+                  marginBottom: 4,
+                }}
+              >
+                {band.label}
+              </Text>
+              <Stars score={enidScore} />
+              <Text
+                style={{
+                  fontSize: 9,
+                  color: colors.grey,
+                  lineHeight: 1.4,
+                  marginTop: 4,
+                }}
+              >
+                {scoreContext}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
         </View>
-
-        <Text
-          style={{
-            fontSize: 14,
-            color: colors.grey,
-            textAlign: "center",
-            marginBottom: 6,
-          }}
-        >
-          {band.label}
-        </Text>
-
-        <Text
-          style={{
-            fontSize: 10,
-            color: colors.grey,
-            textAlign: "center",
-            lineHeight: 1.5,
-            marginBottom: 4,
-          }}
-        >
-          {scoreContext}
-        </Text>
-
-        <View style={styles.divider} />
 
         {/* ---------------------------------------------------------------- */}
         {/* 2. WHAT ENID FOUND                                               */}
         {/* ---------------------------------------------------------------- */}
-        <Text style={styles.sectionHeader}>WHAT ENID FOUND</Text>
-        <Text style={styles.contentText}>{snapshot.what_enid_found}</Text>
-        <View style={styles.divider} />
+        <View wrap={false}>
+          <Text style={styles.sectionHeader}>WHAT ENID FOUND</Text>
+          <Text style={styles.contentText}>{snapshot.what_enid_found}</Text>
+          <View style={styles.divider} />
+        </View>
 
         {/* ---------------------------------------------------------------- */}
         {/* 3. TOP 5 BRAND VALUE LEAKS                                       */}
@@ -464,127 +489,114 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
         {/* ---------------------------------------------------------------- */}
         {/* 4. BRAND SIGNAL SNAPSHOT                                         */}
         {/* ---------------------------------------------------------------- */}
-        <Text style={styles.sectionHeader}>BRAND SIGNAL SNAPSHOT</Text>
-        <Text style={styles.contentText}>{snapshot.brand_signal_snapshot}</Text>
-        <View style={styles.divider} />
+        <View wrap={false}>
+          <Text style={styles.sectionHeader}>BRAND SIGNAL SNAPSHOT</Text>
+          <Text style={styles.contentText}>{snapshot.brand_signal_snapshot}</Text>
+          <View style={styles.divider} />
+        </View>
 
         {/* ---------------------------------------------------------------- */}
         {/* 5. WEBSITE SIGNAL SNAPSHOT                                       */}
         {/* ---------------------------------------------------------------- */}
-        <Text style={styles.sectionHeader}>WEBSITE SIGNAL SNAPSHOT</Text>
-        <Text style={styles.contentText}>{snapshot.website_signal_snapshot}</Text>
-        <View style={styles.divider} />
+        <View wrap={false}>
+          <Text style={styles.sectionHeader}>WEBSITE SIGNAL SNAPSHOT</Text>
+          <Text style={styles.contentText}>{snapshot.website_signal_snapshot}</Text>
+          <View style={styles.divider} />
+        </View>
 
         {/* ---------------------------------------------------------------- */}
         {/* 6. VISIBILITY SNAPSHOT                                           */}
         {/* ---------------------------------------------------------------- */}
-        <Text style={styles.sectionHeader}>VISIBILITY SNAPSHOT</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionHeader}>VISIBILITY SNAPSHOT</Text>
 
-        {/* Badge row */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          {/* Visibility score pill */}
-          <View
-            style={{
-              backgroundColor: visibilityBadgeColor,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 4,
-            }}
-          >
-            <Text
-              style={{
-                color: colors.white,
-                fontFamily: "Helvetica-Bold",
-                fontSize: 11,
-              }}
-            >
-              {seoVisibility.visibilityScore}
-            </Text>
-          </View>
-
-          {/* Indicator dots */}
+          {/* Badge row */}
           <View
             style={{
               flexDirection: "row",
               alignItems: "center",
-              marginLeft: 12,
+              marginBottom: 8,
             }}
           >
-            {/* Website */}
+            {/* Visibility score pill */}
             <View
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: seoVisibility.websiteVisible
-                  ? colors.green
-                  : colors.lightGrey,
-                marginRight: 4,
-              }}
-            />
-            <Text
-              style={{
-                fontSize: 9,
-                color: colors.grey,
-                marginRight: 10,
+                backgroundColor: visibilityBadgeColor,
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 4,
               }}
             >
-              Website
-            </Text>
+              <Text
+                style={{
+                  color: colors.white,
+                  fontFamily: "Helvetica-Bold",
+                  fontSize: 11,
+                }}
+              >
+                {seoVisibility.visibilityScore}
+              </Text>
+            </View>
 
-            {/* Social */}
+            {/* Indicator dots */}
             <View
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: seoVisibility.socialVisible
-                  ? colors.green
-                  : colors.lightGrey,
-                marginRight: 4,
-              }}
-            />
-            <Text
-              style={{
-                fontSize: 9,
-                color: colors.grey,
-                marginRight: 10,
+                flexDirection: "row",
+                alignItems: "center",
+                marginLeft: 12,
               }}
             >
-              Social
-            </Text>
+              {/* Website */}
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: seoVisibility.websiteVisible
+                    ? colors.green
+                    : colors.lightGrey,
+                  marginRight: 4,
+                }}
+              />
+              <Text style={{ fontSize: 9, color: colors.grey, marginRight: 10 }}>
+                Website
+              </Text>
 
-            {/* Press */}
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: seoVisibility.pressVisible
-                  ? colors.green
-                  : colors.lightGrey,
-                marginRight: 4,
-              }}
-            />
-            <Text
-              style={{
-                fontSize: 9,
-                color: colors.grey,
-              }}
-            >
-              Press
-            </Text>
+              {/* Social */}
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: seoVisibility.socialVisible
+                    ? colors.green
+                    : colors.lightGrey,
+                  marginRight: 4,
+                }}
+              />
+              <Text style={{ fontSize: 9, color: colors.grey, marginRight: 10 }}>
+                Social
+              </Text>
+
+              {/* Press */}
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: seoVisibility.pressVisible
+                    ? colors.green
+                    : colors.lightGrey,
+                  marginRight: 4,
+                }}
+              />
+              <Text style={{ fontSize: 9, color: colors.grey }}>Press</Text>
+            </View>
           </View>
-        </View>
 
-        <Text style={styles.contentText}>{snapshot.visibility_snapshot}</Text>
-        <View style={styles.divider} />
+          <Text style={styles.contentText}>{snapshot.visibility_snapshot}</Text>
+          <View style={styles.divider} />
+        </View>
 
         {/* ---------------------------------------------------------------- */}
         {/* 7. WHAT TO FIX FIRST                                             */}
@@ -593,12 +605,7 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
 
         {snapshot.what_to_fix_first.map((fix) => (
           <View key={fix.priority} wrap={false} style={{ marginBottom: 10 }}>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-              }}
-            >
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
               {/* Priority badge */}
               <View
                 style={{
@@ -624,12 +631,7 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
 
               {/* Action text */}
               <Text
-                style={{
-                  fontSize: 11,
-                  flex: 1,
-                  marginLeft: 8,
-                  color: colors.black,
-                }}
+                style={{ fontSize: 11, flex: 1, marginLeft: 8, color: colors.black }}
               >
                 {fix.action}
               </Text>
@@ -642,26 +644,28 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
         {/* ---------------------------------------------------------------- */}
         {/* 8. RECOMMENDED NEXT STEP                                         */}
         {/* ---------------------------------------------------------------- */}
-        <Text style={styles.sectionHeader}>RECOMMENDED NEXT STEP</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionHeader}>RECOMMENDED NEXT STEP</Text>
 
-        <View
-          style={{
-            borderWidth: 2,
-            borderColor: colors.navy,
-            borderRadius: 8,
-            padding: 16,
-            backgroundColor: "#f0f4f7",
-          }}
-        >
-          <Text
+          <View
             style={{
-              fontSize: 12,
-              fontFamily: "Helvetica-Bold",
-              color: colors.navy,
+              borderWidth: 2,
+              borderColor: colors.navy,
+              borderRadius: 8,
+              padding: 16,
+              backgroundColor: "#f0f4f7",
             }}
           >
-            {snapshot.recommended_next_step}
-          </Text>
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: "Helvetica-Bold",
+                color: colors.navy,
+              }}
+            >
+              {snapshot.recommended_next_step}
+            </Text>
+          </View>
         </View>
       </Page>
     </Document>

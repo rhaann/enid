@@ -166,58 +166,62 @@ function extractScore(field: unknown, key: string): number | null {
 }
 
 /**
- * Calculates the Enid Score by averaging all numeric scores available across
- * website, brand, and social media results. Returns 0 if no scores found.
+ * Calculates the Enid Score using a section-weighted average:
+ *   Brand 40% | Website 35% | Social 25%
  *
- * @param websiteRow   - Single row from dlb_website_eval_results.
- * @param brandRow     - Single row from dlb_brand_eval_results.
- * @param socialRows   - All rows from dlb_social_media_agent_results.
+ * Brand and website rows are required — call sites should guard against null
+ * before calling this. Social defaults to 0 if no rows exist (no social
+ * presence is a real gap and should lower the score).
+ *
+ * @param websiteRow   - Single row from dlb_website_eval_results (required).
+ * @param brandRow     - Single row from dlb_brand_eval_results (required).
+ * @param socialRows   - All rows from dlb_social_media_agent_results (may be empty).
  */
 function calculateEnidScore(
-  websiteRow: Record<string, unknown> | null,
-  brandRow: Record<string, unknown> | null,
+  websiteRow: Record<string, unknown>,
+  brandRow: Record<string, unknown>,
   socialRows: Record<string, unknown>[]
 ): number {
-  const scores: number[] = [];
-
-  // Website scores — JSON objects with capital "Score" key
-  if (websiteRow) {
-    for (const field of WEBSITE_SCORE_FIELDS) {
-      const s = extractScore(websiteRow[field], "Score");
-      if (s !== null) scores.push(s);
-    }
+  // Website — average of up to 8 sub-scores
+  const websiteScores: number[] = [];
+  for (const field of WEBSITE_SCORE_FIELDS) {
+    const s = extractScore(websiteRow[field], "Score");
+    if (s !== null) websiteScores.push(s);
   }
+  const websiteScore =
+    websiteScores.length > 0
+      ? websiteScores.reduce((a, b) => a + b, 0) / websiteScores.length
+      : 0;
 
-  // Brand scores — JSON objects with lowercase "score" key
-  if (brandRow) {
-    for (const field of BRAND_SCORE_FIELDS) {
-      const s = extractScore(brandRow[field], "score");
-      if (s !== null) scores.push(s);
-    }
+  // Brand — average of up to 6 sub-scores
+  const brandScores: number[] = [];
+  for (const field of BRAND_SCORE_FIELDS) {
+    const s = extractScore(brandRow[field], "score");
+    if (s !== null) brandScores.push(s);
   }
+  const brandScore =
+    brandScores.length > 0
+      ? brandScores.reduce((a, b) => a + b, 0) / brandScores.length
+      : 0;
 
-  // Social media: platform_average per platform row
-  for (const row of socialRows) {
-    const avg = Number(row["platform_average"]);
-    if (!isNaN(avg) && avg > 0) scores.push(avg);
-  }
-
-  // Social media: overall_assessment.overall_score from the first row's overal_evaluation
+  // Social — use overall_assessment.overall_score only (avoids double-counting
+  // per-platform averages). Defaults to 0 if no social presence was found.
+  let socialScore = 0;
   if (socialRows.length > 0) {
     const raw = socialRows[0]["overal_evaluation"];
     try {
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      const overallScore = Number(
+      const overall = Number(
         (parsed as Record<string, Record<string, unknown>>)?.["overall_assessment"]?.["overall_score"]
       );
-      if (!isNaN(overallScore) && overallScore > 0) scores.push(overallScore);
+      if (!isNaN(overall) && overall > 0) socialScore = overall;
     } catch {
-      // overall score not available — skip
+      // overall score not parseable — social stays 0
     }
   }
 
-  if (scores.length === 0) return 0;
-  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  // Weighted average: Brand 40% | Website 35% | Social 25%
+  return Math.round(brandScore * 0.4 + websiteScore * 0.35 + socialScore * 0.25);
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +443,22 @@ export async function POST(req: NextRequest) {
         brandResult.status === "fulfilled" && brandResult.value.data
           ? (brandResult.value.data as Record<string, unknown>)
           : null;
+
+      // Brand and website are required — without them there is no snapshot
+      if (!websiteRow || !brandRow) {
+        return NextResponse.json(
+          {
+            error:
+              !websiteRow && !brandRow
+                ? "Website and brand evaluations have not completed yet. Cannot generate snapshot."
+                : !websiteRow
+                ? "Website evaluation has not completed yet. Cannot generate snapshot."
+                : "Brand evaluation has not completed yet. Cannot generate snapshot.",
+          },
+          { status: 422 }
+        );
+      }
+
       const socialRows: Record<string, unknown>[] =
         socialResult.status === "fulfilled" && socialResult.value.data
           ? (socialResult.value.data as Record<string, unknown>[])
@@ -448,7 +468,7 @@ export async function POST(req: NextRequest) {
           ? (competitorResult.value.data as Record<string, unknown>[])
           : [];
 
-      // Step 3: Calculate Enid Score (plain TypeScript — no LLM)
+      // Step 3: Calculate Enid Score (weighted: Brand 40% | Website 35% | Social 25%)
       enidScore = calculateEnidScore(websiteRow, brandRow, socialRows);
 
       // Step 4: SEO visibility check via Tavily
@@ -466,13 +486,24 @@ export async function POST(req: NextRequest) {
       }
 
       // Step 5: Call Claude snapshot agent
+      const socialPayload =
+        socialRows.length > 0
+          ? socialRows
+          : {
+              status: "NO_SOCIAL_PRESENCE",
+              explanation:
+                "The social media agent ran but found no social media profiles for this company. " +
+                "This contributed a score of 0 to the 25% social weighting in the Enid Score. " +
+                "The snapshot must explicitly tell the client they have no social presence and " +
+                "explain why establishing one is critical for brand visibility and trust.",
+            };
+
       const userMessage = JSON.stringify(
         {
           company_info: auditInput,
-          website_eval: websiteRow ?? "Not available",
-          brand_eval: brandRow ?? "Not available",
-          social_media_results:
-            socialRows.length > 0 ? socialRows : "Not available",
+          website_eval: websiteRow,
+          brand_eval: brandRow,
+          social_media_results: socialPayload,
           competitor_results:
             competitorRows.length > 0 ? competitorRows : "Not available",
           enid_score: enidScore,
