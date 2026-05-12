@@ -32,7 +32,7 @@ import { sendSnapshotEmail, sendAdminFailureAlert } from "@/lib/email";
 // Route handler
 // ---------------------------------------------------------------------------
 
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   // ------------------------------------------------------------------
   // Auth: validate Vercel cron secret
   // ------------------------------------------------------------------
@@ -69,25 +69,42 @@ export async function POST(req: Request) {
   // ------------------------------------------------------------------
   // Phase 1 — Trigger the oldest pending audit
   // ------------------------------------------------------------------
-  const { data: pending } = await supabaseAdmin
+  const now = new Date().toISOString();
+
+  // Debug: check how many rows are pending at all (ignoring scheduled_for)
+  const { data: allPending, error: allPendingError } = await supabaseAdmin
+    .from("dlb_audit_inputs")
+    .select("id, scheduled_for, status")
+    .is("status", null);
+  console.log(`[cron/phase1] All null-status rows:`, JSON.stringify(allPending ?? []), allPendingError ?? "");
+
+  const { data: pending, error: pendingError } = await supabaseAdmin
     .from("dlb_audit_inputs")
     .select("id, name, url")
     .is("status", null)
-    .lte("scheduled_for", new Date().toISOString())
+    .lte("scheduled_for", now)
     .order("scheduled_for", { ascending: true })
     .limit(1)
     .maybeSingle();
 
+  console.log(`[cron/phase1] now=${now} pending=${JSON.stringify(pending)} error=${pendingError ?? ""}`);
+
   if (pending) {
     // Mark In Progress synchronously — prevents double-triggering if the
     // cron fires again before the evaluator agent updates the status.
-    await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from("dlb_audit_inputs")
       .update({
         status: "In Progress",
         status_updated_at: new Date().toISOString(),
       })
       .eq("id", pending.id);
+
+    if (updateError) {
+      console.error(`[cron/phase1] Failed to update status for ${pending.id}:`, updateError);
+    } else {
+      console.log(`[cron/phase1] Status set to In Progress for ${pending.id}`);
+    }
 
     phase1 = `triggered:${pending.id}`;
 
