@@ -36,6 +36,14 @@ export async function POST(req: Request) {
     );
   }
 
+  // Mark as In Progress synchronously before after() fires.
+  // This prevents the cron from picking up the same row again if it runs
+  // before the evaluator agent has a chance to update the status itself.
+  await supabase()
+    .from("dlb_audit_inputs")
+    .update({ status: "In Progress", status_updated_at: new Date().toISOString() })
+    .eq("id", auditId);
+
   const host = req.headers.get("host") ?? "localhost:3000";
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
   const appUrl = `${proto}://${host}`;

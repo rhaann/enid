@@ -7,16 +7,53 @@ import { Suspense } from "react";
 import { AuditProvider, useAudit } from "@/components/AuditProvider";
 import { useState, useEffect } from "react";
 import { OverlayDialog } from "@/components/OverlayDialog";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { generateAuditPDF } from "@/components/AuditPDFTemplate";
 import { HEALTH_BAR_SEGMENTS, SCORE_LEGEND } from "@/lib/scoring";
 
 function AuditContent({ children }: { children: ReactNode }) {
   const base = "/audit";
   const [openHelp, setOpenHelp] = useState(false);
-  const { audit, loading, error } = useAudit();
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const { audit, loading, error, pendingSections } = useAudit();
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const auditId = searchParams.get("id");
+
+  /**
+   * Calls the snapshot agent API, receives a PDF blob, and triggers a browser
+   * download. Disabled while agents are still running or a request is in flight.
+   */
+  async function handleSnapshot() {
+    if (!auditId || snapshotLoading) return;
+    setSnapshotLoading(true);
+    try {
+      const res = await fetch("/api/snapshot_agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audit_input_id: auditId }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Snapshot failed (HTTP ${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${audit.companyName ?? "enid"}-snapshot.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[snapshot] download failed:", err);
+      alert(err instanceof Error ? err.message : "Snapshot generation failed. Please try again.");
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -79,6 +116,21 @@ function AuditContent({ children }: { children: ReactNode }) {
                 className="rounded-md border border-[#8b5a96] bg-[#8b5a96] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#7a4d85]"
               >
                 Download as PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleSnapshot}
+                disabled={snapshotLoading || pendingSections.length > 0 || loading}
+                className="flex items-center justify-center gap-2 rounded-md border border-[#25394b] bg-[#25394b] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1c2e3d] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {snapshotLoading ? (
+                  <>
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Generating…
+                  </>
+                ) : (
+                  "Download Snapshot"
+                )}
               </button>
             </div>
           </div>
