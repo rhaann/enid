@@ -6,17 +6,11 @@
 // Core send function
 // ---------------------------------------------------------------------------
 
-interface ResendAttachment {
-  filename: string;
-  content: string; // base64
-}
-
 interface ResendPayload {
   from: string;
   to: string[];
   subject: string;
   html: string;
-  attachments?: ResendAttachment[];
 }
 
 async function sendEmail(payload: ResendPayload): Promise<void> {
@@ -45,98 +39,54 @@ async function sendEmail(payload: ResendPayload): Promise<void> {
 export async function sendSnapshotEmail(
   companyName: string,
   clientEmail: string,
-  pdfBuffer: Uint8Array
+  downloadUrl: string
 ): Promise<void> {
-  const safeName = companyName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-
   await sendEmail({
     from: `Enid <${process.env.RESEND_FROM_EMAIL ?? ""}>`,
     to: [clientEmail],
-    subject: `Your Brand Snapshot is ready — ${companyName}`,
+    subject: `Your Snapshot by Enid is Ready!`,
     html: `
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-<body style="margin:0;padding:0;background-color:#f4f4f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f0;padding:40px 16px;">
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;padding:40px 24px;">
     <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+      <td>
 
-          <!-- Logo -->
+        <!-- Greeting -->
+        <p style="margin:0 0 20px;font-size:16px;line-height:1.7;color:#222222;">Hi ${companyName},</p>
+
+        <!-- Body -->
+        <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#222222;">
+          Your Brand Snapshot is complete. We've analysed your branding, website, social media, and distilled it into a clear, executive-ready report.
+        </p>
+        <p style="margin:0 0 28px;font-size:16px;line-height:1.7;color:#222222;">
+          Open it to see your Enid Score, key brand gaps, and the top actions we recommend.
+        </p>
+
+        <!-- Inline PDF attachment -->
+        <table cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
           <tr>
-            <td style="padding-bottom:32px;">
-              <img src="https://enid-rho.vercel.app/Enid%20Full%20Logo%20Black.png" alt="Enid" height="36" style="display:block;height:36px;width:auto;"/>
+            <td style="border-radius:10px;background-color:#4BBEC6;">
+              <a href="${downloadUrl}" target="_blank" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;letter-spacing:0.2px;">
+                ${companyName}-snapshot.pdf
+              </a>
             </td>
           </tr>
-
-          <!-- Card -->
-          <tr>
-            <td style="background-color:#ffffff;border-radius:12px;padding:48px 40px;">
-
-              <!-- Label -->
-              <p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#c9a84c;">Your Snapshot is Ready</p>
-
-              <!-- Heading -->
-              <h1 style="margin:0 0 24px;font-size:28px;font-weight:700;color:#25394b;line-height:1.2;">Hi ${companyName},</h1>
-
-              <!-- Body -->
-              <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#444444;">
-                Your Brand Snapshot is complete. We've analysed your brand presence across your website, social media, and competitive landscape — and distilled it into a clear, executive-ready report.
-              </p>
-              <p style="margin:0 0 32px;font-size:16px;line-height:1.7;color:#444444;">
-                Your report is attached to this email. Open it to see your Enid Score, key brand gaps, and the top actions we recommend.
-              </p>
-
-              <!-- Divider -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
-                <tr><td style="border-top:1px solid #eeeeee;"></td></tr>
-              </table>
-
-              <!-- Attachment callout -->
-              <table cellpadding="0" cellspacing="0" style="background-color:#f8f8f6;border-radius:8px;padding:16px 20px;width:100%;">
-                <tr>
-                  <td style="width:36px;vertical-align:middle;">
-                    <div style="width:32px;height:32px;background-color:#25394b;border-radius:6px;text-align:center;line-height:32px;">
-                      <span style="color:#ffffff;font-size:14px;">&#128196;</span>
-                    </div>
-                  </td>
-                  <td style="padding-left:12px;vertical-align:middle;">
-                    <p style="margin:0;font-size:13px;font-weight:600;color:#25394b;">${companyName} Snapshot by Enid.pdf</p>
-                    <p style="margin:4px 0 0;font-size:12px;color:#888888;">Attached to this email</p>
-                  </td>
-                </tr>
-              </table>
-
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:32px 0 0;text-align:center;">
-              <p style="margin:0;font-size:12px;color:#aaaaaa;line-height:1.6;">
-                This report was prepared by Enid Brand Intelligence.<br/>
-                Questions? Reply to this email and we'll get back to you.
-              </p>
-            </td>
-          </tr>
-
         </table>
+
+        <!-- Sign-off -->
+        <p style="margin:0 0 12px;font-size:16px;line-height:1.7;color:#222222;">Best,</p>
+        <img src="https://enid-rho.vercel.app/Enid%20Full%20Logo%20Black.png" alt="Enid" height="28" style="display:block;height:28px;width:auto;margin-bottom:6px;"/>
+        <a href="https://www.askenid.ai/" style="font-size:13px;color:#888888;text-decoration:none;">askenid.ai</a>
+
       </td>
     </tr>
   </table>
 </body>
 </html>
     `,
-    attachments: [
-      {
-        filename: `${companyName} Snapshot by Enid.pdf`,
-        content: Buffer.from(pdfBuffer).toString("base64"),
-      },
-    ],
   });
 }
 

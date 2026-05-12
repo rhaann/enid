@@ -158,8 +158,9 @@ export async function POST(req: Request) {
 
     after(async () => {
       try {
-        // Call snapshot agent — returns the PDF directly (application/pdf).
-        // Uses x-internal-secret so no admin session is required.
+        // Warm the snapshot cache — runs the full pipeline if needed, saves
+        // synthesis to dlb_snapshot_results. We don't stream the PDF here;
+        // the client downloads it on demand via /api/download/[auditId].
         const snapshotRes = await fetch(`${appUrl}/api/snapshot_agent`, {
           method: "POST",
           headers: internalHeaders,
@@ -171,23 +172,17 @@ export async function POST(req: Request) {
           throw new Error(json.error ?? `Snapshot agent returned HTTP ${snapshotRes.status}`);
         }
 
-        const contentType = snapshotRes.headers.get("content-type") ?? "";
-        if (!contentType.includes("application/pdf")) {
-          const text = await snapshotRes.text().catch(() => "");
-          throw new Error(`Expected PDF from snapshot agent, got: ${contentType}. Body: ${text.slice(0, 200)}`);
-        }
+        // Build the public download link for the client email
+        const downloadUrl = `${appUrl}/api/download/${auditForEmail!.id}`;
 
-        const pdfBuffer = new Uint8Array(await snapshotRes.arrayBuffer());
-
-        // Send email with PDF attached
+        // Send email with download button
         await sendSnapshotEmail(
           String(auditForEmail!.name ?? "Your Company"),
           String(auditForEmail!.email ?? ""),
-          pdfBuffer
+          downloadUrl
         );
 
-        // Stamp emailed_at — upsert handles the case where no snapshot row
-        // exists yet (snapshot_agent creates it, but just in case of a race)
+        // Stamp emailed_at
         await supabaseAdmin
           .from("dlb_snapshot_results")
           .update({ emailed_at: new Date().toISOString() })
