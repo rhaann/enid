@@ -57,9 +57,12 @@ export async function GET(req: Request) {
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
   const appUrl = `${proto}://${host}`;
 
+  const internalSecret = process.env.INTERNAL_API_SECRET ?? "";
+  console.log(`[cron] INTERNAL_API_SECRET set: ${!!internalSecret}, length: ${internalSecret.length}, first4: ${internalSecret.slice(0, 4)}`);
+
   const internalHeaders = {
     "Content-Type": "application/json",
-    "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
+    "x-internal-secret": internalSecret,
   };
 
   // Summaries returned in the response for observability
@@ -137,7 +140,7 @@ export async function GET(req: Request) {
           String(pending.name ?? "Unknown"),
           String(pending.url ?? ""),
           msg
-        ).catch((e) => console.error("[cron/phase1] Brevo alert failed:", e));
+        ).catch((e) => console.error("[cron/phase1] Resend alert failed:", e));
       }
     });
   }
@@ -213,7 +216,7 @@ export async function GET(req: Request) {
           String(auditForEmail!.name ?? "Unknown"),
           String(auditForEmail!.url ?? ""),
           `Snapshot generation / email failed: ${msg}`
-        ).catch((e) => console.error("[cron/phase2] Brevo alert failed:", e));
+        ).catch((e) => console.error("[cron/phase2] Resend alert failed:", e));
       }
     });
   }
