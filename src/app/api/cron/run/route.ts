@@ -182,6 +182,7 @@ export async function POST(req: Request) {
         // Send email with PDF attached
         await sendSnapshotEmail(
           String(auditForEmail!.name ?? "Your Company"),
+          String(auditForEmail!.email ?? ""),
           pdfBuffer
         );
 
