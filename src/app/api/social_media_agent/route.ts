@@ -424,48 +424,89 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 6. Run URL Filter agent
+    // 6. Regex extraction — fast, deterministic, no Claude needed.
+    //    Pulls full social profile URLs directly from the scraped HTML.
+    //    This handles brands like DLB where the links are clearly in the
+    //    markup but Claude's URL filter sometimes misses them in dense HTML.
     // ------------------------------------------------------------------
-    const userSocialUrls = [
-      auditInput.linkedin_url ? `LinkedIn: ${auditInput.linkedin_url}` : null,
-      auditInput.x_url ? `Twitter/X: ${auditInput.x_url}` : null,
-      auditInput.facebook_url ? `Facebook: ${auditInput.facebook_url}` : null,
-      auditInput.instagram_url ? `Instagram: ${auditInput.instagram_url}` : null,
-      auditInput.youtube_url ? `YouTube: ${auditInput.youtube_url}` : null,
-      auditInput.tiktok_url ? `TikTok: ${auditInput.tiktok_url}` : null,
-      auditInput.pinterest_url ? `Pinterest: ${auditInput.pinterest_url}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const REGEX_SOCIAL_PATTERNS: Array<{ platform: Platform; re: RegExp }> = [
+      { platform: "LinkedIn",  re: /https?:\/\/(www\.)?linkedin\.com\/(company|in)\/[^\s"'></?#]+/gi },
+      { platform: "Instagram", re: /https?:\/\/(www\.)?instagram\.com\/[^\s"'></?#]+/gi },
+      { platform: "Twitter/X", re: /https?:\/\/(www\.)?(twitter\.com|x\.com)\/[^\s"'></?#]+/gi },
+      { platform: "Facebook",  re: /https?:\/\/(www\.)?facebook\.com\/[^\s"'></?#]+/gi },
+      { platform: "YouTube",   re: /https?:\/\/(www\.)?youtube\.com\/(channel\/|c\/|@)[^\s"'></?#]+/gi },
+      { platform: "TikTok",    re: /https?:\/\/(www\.)?tiktok\.com\/@[^\s"'></?#]+/gi },
+      { platform: "Pinterest", re: /https?:\/\/(www\.)?pinterest\.com\/[^\s"'></?#]+/gi },
+    ];
 
-    const urlFilterMessage = [
-      "User-provided social media URLs:",
-      userSocialUrls || "None provided",
-      "",
-      "Scraped website HTML:",
-      combinedHtml || "No scraped HTML available",
-    ].join("\n");
+    let profiles: SocialProfile[] = [];
 
-    const filterResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: [
-        {
-          type: "text",
-          text: URL_FILTER_SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [{ role: "user", content: urlFilterMessage }],
-    });
-
-    const filterBlock = filterResponse.content[0];
-    if (filterBlock.type !== "text") {
-      throw new Error("URL Filter agent returned a non-text response block");
+    // Add any user-provided URLs first
+    const userProvidedMap: Partial<Record<Platform, string>> = {
+      LinkedIn:   auditInput.linkedin_url  || undefined,
+      "Twitter/X": auditInput.x_url        || undefined,
+      Facebook:   auditInput.facebook_url  || undefined,
+      Instagram:  auditInput.instagram_url || undefined,
+      YouTube:    auditInput.youtube_url   || undefined,
+      TikTok:     auditInput.tiktok_url    || undefined,
+      Pinterest:  auditInput.pinterest_url || undefined,
+    };
+    for (const [platform, url] of Object.entries(userProvidedMap)) {
+      if (url) profiles.push({ platform: platform as Platform, url });
     }
 
-    const filterResult = parseJsonResponse(filterBlock.text, "URL Filter Agent");
-    let profiles = (filterResult.profiles as SocialProfile[] | undefined) ?? [];
+    // Regex-extract from HTML for any platform not already provided
+    const seenPlatformsRegex = new Set(profiles.map((p) => p.platform));
+    for (const { platform, re } of REGEX_SOCIAL_PATTERNS) {
+      if (seenPlatformsRegex.has(platform)) continue;
+      const matches = [...new Set(combinedHtml.match(re) ?? [])];
+      const profileMatch = matches.find((url) => {
+        const path = url.replace(/^https?:\/\/(www\.)?[^/]+/i, "");
+        return path.length > 1; // exclude bare domain roots
+      });
+      if (profileMatch) {
+        profiles.push({ platform, url: profileMatch });
+        seenPlatformsRegex.add(platform);
+      }
+    }
+
+    console.log(`[social_media_agent] Regex extraction found ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
+
+    // ------------------------------------------------------------------
+    // 6b. Claude URL Filter — only runs if regex found nothing.
+    //     Used as a fallback for sites where social URLs are encoded,
+    //     relative, or otherwise not matching the regex patterns above.
+    // ------------------------------------------------------------------
+    if (profiles.length === 0) {
+      const userSocialUrls = Object.entries(userProvidedMap)
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n");
+
+      const urlFilterMessage = [
+        "User-provided social media URLs:",
+        userSocialUrls || "None provided",
+        "",
+        "Scraped website HTML:",
+        combinedHtml || "No scraped HTML available",
+      ].join("\n");
+
+      const filterResponse = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        system: [{ type: "text", text: URL_FILTER_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: urlFilterMessage }],
+      });
+
+      const filterBlock = filterResponse.content[0];
+      if (filterBlock.type !== "text") {
+        throw new Error("URL Filter agent returned a non-text response block");
+      }
+
+      const filterResult = parseJsonResponse(filterBlock.text, "URL Filter Agent");
+      profiles = (filterResult.profiles as SocialProfile[] | undefined) ?? [];
+      console.log(`[social_media_agent] Claude URL filter found ${profiles.length} profiles`);
+    }
 
     // ------------------------------------------------------------------
     // 7. Tavily fallback — if HTML yielded no profiles, search the web

@@ -247,6 +247,7 @@ export async function POST(req: NextRequest) {
     };
 
     const socialLinksFound: string[] = [];
+    const socialLinkUpdates: Record<string, string> = {};
     for (const [platform, pattern] of Object.entries(SOCIAL_PATTERNS)) {
       const matches = [...new Set(combinedHtml.match(pattern) ?? [])];
       // Keep only real profile URLs (filter out generic platform roots)
@@ -256,7 +257,34 @@ export async function POST(req: NextRequest) {
       });
       if (profileMatches.length > 0) {
         socialLinksFound.push(`${platform}: ${profileMatches[0]}`);
+        socialLinkUpdates[platform] = profileMatches[0];
       }
+    }
+
+    // Write discovered social links back to dlb_audit_inputs so the social
+    // media agent can read them directly — only fill columns that are empty.
+    const columnMap: Record<string, string> = {
+      LinkedIn:   "linkedin_url",
+      "Twitter/X": "x_url",
+      Facebook:   "facebook_url",
+      Instagram:  "instagram_url",
+      YouTube:    "youtube_url",
+      TikTok:     "tiktok_url",
+      Pinterest:  "pinterest_url",
+    };
+    const updatePayload: Record<string, string> = {};
+    for (const [platform, url] of Object.entries(socialLinkUpdates)) {
+      const col = columnMap[platform];
+      if (col && !(auditInput as Record<string, unknown>)[col]) {
+        updatePayload[col] = url;
+      }
+    }
+    if (Object.keys(updatePayload).length > 0) {
+      await supabaseAdmin
+        .from("dlb_audit_inputs")
+        .update(updatePayload)
+        .eq("id", audit_input_id);
+      console.log(`[evaluator] Saved discovered social links:`, updatePayload);
     }
 
     // Shared user message for both eval agents

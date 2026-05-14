@@ -111,10 +111,10 @@ export default function AuditOverviewNoId() {
               ) : socialUnavailable ? (
                 <div className="flex-1 flex flex-col items-center justify-center py-6 text-center">
                   <p className="text-sm font-medium text-zinc-600">
-                    Social Media Data Not Available
+                    Social Media Analysis Not Run
                   </p>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Social media data was not returned for this audit. This may happen if no social media URLs were provided.
+                    Social media analysis did not complete for this audit. Run a new audit to get social media results.
                   </p>
                 </div>
               ) : hasSocialError ? (

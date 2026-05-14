@@ -44,9 +44,11 @@ export async function POST(req: Request) {
     .update({ status: "In Progress", status_updated_at: new Date().toISOString() })
     .eq("id", auditId);
 
-  const host = req.headers.get("host") ?? "localhost:3000";
-  const proto = req.headers.get("x-forwarded-proto") ?? "http";
-  const appUrl = `${proto}://${host}`;
+  const appUrl = process.env.APP_URL ?? (() => {
+    const host = req.headers.get("host") ?? "localhost:3000";
+    const proto = req.headers.get("x-forwarded-proto") ?? "http";
+    return `${proto}://${host}`;
+  })();
 
   const internalHeaders = {
     "Content-Type": "application/json",
