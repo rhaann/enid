@@ -118,17 +118,36 @@ export async function GET(req: Request) {
     phase1 = `triggered:${pending.id}`;
 
     after(async () => {
+      const agentPayload = JSON.stringify({ audit_input_id: pending.id });
       try {
         const res = await fetch(`${appUrl}/api/evaluator_agent`, {
           method: "POST",
           headers: internalHeaders,
-          body: JSON.stringify({ audit_input_id: pending.id }),
+          body: agentPayload,
         });
 
         if (!res.ok) {
           const json = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(json.error ?? `Evaluator returned HTTP ${res.status}`);
         }
+
+        // Fire competitor and social agents after evaluator succeeds
+        console.log(`[cron/phase1] Dispatching competitor and social agents for ${pending.id}`);
+        fetch(`${appUrl}/api/competitor_agent`, {
+          method: "POST",
+          headers: internalHeaders,
+          body: agentPayload,
+        }).catch((err) => console.error("[cron/phase1] Competitor dispatch failed:", err));
+
+        fetch(`${appUrl}/api/social_media_agent`, {
+          method: "POST",
+          headers: internalHeaders,
+          body: agentPayload,
+        }).catch((err) => console.error("[cron/phase1] Social dispatch failed:", err));
+
+        // Hold briefly so TCP connections are established before after() exits
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         console.error(`[cron/phase1] Evaluator failed for ${pending.id}:`, msg);
