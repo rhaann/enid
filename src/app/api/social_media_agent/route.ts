@@ -495,35 +495,34 @@ export async function POST(req: NextRequest) {
         });
 
         if (tavilyRes.ok) {
-          const tavilyData = await tavilyRes.json() as { results?: { url: string; title: string; content: string }[] };
-          const searchSnippets = (tavilyData.results ?? [])
-            .map((r) => `${r.url}\n${r.title}\n${r.content}`)
-            .join("\n\n");
+          const tavilyData = await tavilyRes.json() as { results?: { url: string }[] };
+          const resultUrls = (tavilyData.results ?? []).map((r) => r.url);
+          console.log(`[social_media_agent] Tavily returned ${resultUrls.length} URLs:`, resultUrls);
 
-          if (searchSnippets.trim()) {
-            const fallbackFilterResponse = await anthropic.messages.create({
-              model: "claude-sonnet-4-6",
-              max_tokens: 1024,
-              system: [{ type: "text", text: URL_FILTER_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-              messages: [{
-                role: "user",
-                content: [
-                  "User-provided social media URLs:",
-                  userSocialUrls || "None provided",
-                  "",
-                  "Web search results for company social profiles:",
-                  searchSnippets,
-                ].join("\n"),
-              }],
-            });
+          // Map each result URL directly to a Platform using URL patterns.
+          // This is more reliable than asking Claude to re-filter snippets,
+          // because the Tavily result URLs ARE the profile URLs.
+          const seenPlatforms = new Set<string>();
+          const SOCIAL_PATTERNS: Array<{ re: RegExp; platform: Platform }> = [
+            { re: /linkedin\.com\/(company|in)\/[^/?#\s]+/, platform: "LinkedIn" },
+            { re: /instagram\.com\/[^/?#\s]+/, platform: "Instagram" },
+            { re: /(?:twitter|x)\.com\/[^/?#\s]+/, platform: "Twitter/X" },
+            { re: /facebook\.com\/[^/?#\s]+/, platform: "Facebook" },
+            { re: /youtube\.com\/(channel|c|@|user\/)[^/?#\s]+/, platform: "YouTube" },
+            { re: /tiktok\.com\/@[^/?#\s]+/, platform: "TikTok" },
+            { re: /pinterest\.com\/[^/?#\s]+/, platform: "Pinterest" },
+          ];
 
-            const fallbackBlock = fallbackFilterResponse.content[0];
-            if (fallbackBlock.type === "text") {
-              const fallbackResult = parseJsonResponse(fallbackBlock.text, "URL Filter Fallback");
-              profiles = (fallbackResult.profiles as SocialProfile[] | undefined) ?? [];
-              console.log(`[social_media_agent] Tavily fallback found ${profiles.length} profiles`);
+          for (const url of resultUrls) {
+            for (const { re, platform } of SOCIAL_PATTERNS) {
+              if (re.test(url) && !seenPlatforms.has(platform)) {
+                profiles.push({ platform, url });
+                seenPlatforms.add(platform);
+                break;
+              }
             }
           }
+          console.log(`[social_media_agent] Tavily fallback found ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
         }
       } catch (e) {
         console.warn("[social_media_agent] Tavily fallback search failed:", e instanceof Error ? e.message : String(e));
