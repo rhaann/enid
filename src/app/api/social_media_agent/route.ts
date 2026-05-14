@@ -472,86 +472,104 @@ export async function POST(req: NextRequest) {
 
     console.log(`[social_media_agent] Regex extraction found ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
 
-    // The two most important platforms — if either is missing after regex,
-    // always run the Tavily fallback to try to find them.
-    const KEY_PLATFORMS: Platform[] = ["LinkedIn", "Instagram"];
-    const foundPlatforms = () => new Set(profiles.map((p) => p.platform));
-    const missingKeyPlatforms = () => KEY_PLATFORMS.filter((p) => !foundPlatforms().has(p));
-
-    // ------------------------------------------------------------------
-    // 6b. Tavily fallback — always runs if LinkedIn or Instagram is missing.
-    //     Brand social pages follow platform.com/brandname, so we derive
-    //     the slug from the company domain and filter results by it.
-    // ------------------------------------------------------------------
-    if (missingKeyPlatforms().length > 0) {
-      console.log(`[social_media_agent] Missing key platforms: ${missingKeyPlatforms().join(", ")} — running Tavily brand-slug search`);
+    // Derive brand slug once — used in both Tavily search and slug construction.
+    const brandSlug = (() => {
       try {
-        const brandSlug = (() => {
-          try {
-            return new URL(String(auditInput.url ?? ""))
-              .hostname
-              .replace(/^www\./, "")
-              .split(".")[0]
-              .toLowerCase();
-          } catch { return ""; }
-        })();
+        return new URL(String(auditInput.url ?? ""))
+          .hostname
+          .replace(/^www\./, "")
+          .split(".")[0]
+          .toLowerCase();
+      } catch { return ""; }
+    })();
 
-        console.log(`[social_media_agent] Brand slug: "${brandSlug}"`);
+    console.log(`[social_media_agent] Brand slug: "${brandSlug}"`);
 
-        const tavilyRes = await fetch("https://api.tavily.com/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_key: process.env.TAVILY_API_KEY,
-            query: auditInput.name,
-            search_depth: "basic",
-            max_results: 15,
-            include_domains: [
-              "linkedin.com",
-              "instagram.com",
-              "twitter.com",
-              "x.com",
-              "facebook.com",
-              "youtube.com",
-              "tiktok.com",
-              "pinterest.com",
-            ],
-          }),
-        });
+    // ------------------------------------------------------------------
+    // 6b. Tavily web search — finds the brand's ACTUAL social handles.
+    //     Searches broadly (no include_domains) so results include press
+    //     releases, directories, and the brand's own site — all of which
+    //     mention their real social profile URLs. Works for any brand,
+    //     not just well-known ones where the handle matches the domain.
+    // ------------------------------------------------------------------
+    const SOCIAL_EXTRACT_RE: Array<{ re: RegExp; platform: Platform }> = [
+      { re: /https?:\/\/(www\.)?linkedin\.com\/company\/[^\s"'></?#]+/gi, platform: "LinkedIn"  },
+      { re: /https?:\/\/(www\.)?instagram\.com\/[^\s"'></?#]+/gi,         platform: "Instagram" },
+      { re: /https?:\/\/(www\.)?(twitter|x)\.com\/[^\s"'></?#]+/gi,       platform: "Twitter/X" },
+      { re: /https?:\/\/(www\.)?facebook\.com\/[^\s"'></?#]+/gi,          platform: "Facebook"  },
+      { re: /https?:\/\/(www\.)?youtube\.com\/(channel\/|c\/|@)[^\s"'></?#]+/gi, platform: "YouTube" },
+      { re: /https?:\/\/(www\.)?tiktok\.com\/@[^\s"'></?#]+/gi,           platform: "TikTok"   },
+      { re: /https?:\/\/(www\.)?pinterest\.com\/[^\s"'></?#]+/gi,         platform: "Pinterest" },
+    ];
+    const CONTENT_PATH_RE = /\/(reel|p|tv|stories|posts?|photo|video|watch|shorts|playlist|status|pin)\b/i;
 
-        if (tavilyRes.ok) {
-          const tavilyData = await tavilyRes.json() as { results?: { url: string }[] };
-          const resultUrls = (tavilyData.results ?? []).map((r) => r.url);
-          console.log(`[social_media_agent] Tavily returned ${resultUrls.length} URLs:`, resultUrls);
+    try {
+      const tavilyRes = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: process.env.TAVILY_API_KEY,
+          query: `${auditInput.name} official social media LinkedIn Instagram`,
+          search_depth: "basic",
+          max_results: 10,
+          // No include_domains — broad search finds any page mentioning the brand's handles
+        }),
+      });
 
-          const TAVILY_PATTERNS: Array<{ re: RegExp; platform: Platform }> = [
-            { re: /linkedin\.com\/company\/[^/?#\s]+/,        platform: "LinkedIn"  },
-            { re: /instagram\.com\/[^/?#\s]+/,                 platform: "Instagram" },
-            { re: /(?:twitter|x)\.com\/[^/?#\s]+/,            platform: "Twitter/X" },
-            { re: /facebook\.com\/[^/?#\s]+/,                  platform: "Facebook"  },
-            { re: /youtube\.com\/(channel\/|c\/|@)[^/?#\s]+/, platform: "YouTube"   },
-            { re: /tiktok\.com\/@[^/?#\s]+/,                   platform: "TikTok"   },
-            { re: /pinterest\.com\/[^/?#\s]+/,                 platform: "Pinterest" },
-          ];
-          const CONTENT_PATH_RE = /\/(reel|p|tv|stories|posts?|photo|video|watch|shorts|playlist|status|pin)\//i;
-          const alreadyFound = foundPlatforms();
+      if (tavilyRes.ok) {
+        const tavilyData = await tavilyRes.json() as { results?: { url: string; content: string }[] };
+        // Combine all result URLs + snippet text — social profile URLs appear in both
+        const allText = (tavilyData.results ?? [])
+          .map((r) => `${r.url} ${r.content}`)
+          .join("\n");
 
-          for (const url of resultUrls) {
-            if (CONTENT_PATH_RE.test(url)) continue;
-            if (brandSlug && !url.toLowerCase().includes(brandSlug)) continue;
-            for (const { re, platform } of TAVILY_PATTERNS) {
-              if (re.test(url) && !alreadyFound.has(platform)) {
-                profiles.push({ platform, url });
-                alreadyFound.add(platform);
-                break;
-              }
-            }
+        console.log(`[social_media_agent] Tavily broad search returned ${tavilyData.results?.length ?? 0} results`);
+
+        const alreadyFound = new Set(profiles.map((p) => p.platform));
+        for (const { re, platform } of SOCIAL_EXTRACT_RE) {
+          if (alreadyFound.has(platform)) continue;
+          re.lastIndex = 0;
+          const matches = [...new Set(allText.match(re) ?? [])];
+          const profileMatch = matches.find((url) => {
+            if (CONTENT_PATH_RE.test(url)) return false;
+            const path = url.replace(/^https?:\/\/(www\.)?[^/]+/i, "");
+            return path.length > 1;
+          });
+          if (profileMatch) {
+            profiles.push({ platform, url: profileMatch });
+            alreadyFound.add(platform);
           }
-          console.log(`[social_media_agent] After Tavily: ${profiles.length} total profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
         }
-      } catch (e) {
-        console.warn("[social_media_agent] Tavily search failed:", e instanceof Error ? e.message : String(e));
+        console.log(`[social_media_agent] After Tavily search: ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
       }
+    } catch (e) {
+      console.warn("[social_media_agent] Tavily broad search failed:", e instanceof Error ? e.message : String(e));
+    }
+
+    // ------------------------------------------------------------------
+    // 6c. Slug construction — last resort for any platform still missing.
+    //     Constructs canonical URLs from the domain slug (nike.com → nike).
+    //     Works reliably for Nike-sized brands. For smaller brands with
+    //     different handles, the Tavily crawl step will surface low content
+    //     and scores will naturally reflect a weak/missing presence.
+    // ------------------------------------------------------------------
+    if (brandSlug) {
+      const alreadyFound = new Set(profiles.map((p) => p.platform));
+      const SLUG_CANDIDATES: Array<{ platform: Platform; url: string }> = [
+        { platform: "LinkedIn",  url: `https://www.linkedin.com/company/${brandSlug}/` },
+        { platform: "Instagram", url: `https://www.instagram.com/${brandSlug}/` },
+        { platform: "Twitter/X", url: `https://x.com/${brandSlug}` },
+        { platform: "Facebook",  url: `https://www.facebook.com/${brandSlug}` },
+        { platform: "YouTube",   url: `https://www.youtube.com/@${brandSlug}` },
+        { platform: "TikTok",    url: `https://www.tiktok.com/@${brandSlug}` },
+      ];
+      for (const candidate of SLUG_CANDIDATES) {
+        if (!alreadyFound.has(candidate.platform)) {
+          profiles.push(candidate);
+          alreadyFound.add(candidate.platform);
+        }
+      }
+      console.log(`[social_media_agent] After slug construction: ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
     }
 
     // ------------------------------------------------------------------
