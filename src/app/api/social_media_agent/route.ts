@@ -465,10 +465,73 @@ export async function POST(req: NextRequest) {
     }
 
     const filterResult = parseJsonResponse(filterBlock.text, "URL Filter Agent");
-    const profiles = (filterResult.profiles as SocialProfile[] | undefined) ?? [];
+    let profiles = (filterResult.profiles as SocialProfile[] | undefined) ?? [];
 
     // ------------------------------------------------------------------
-    // 7. Guard: no social profiles found
+    // 7. Tavily fallback — if HTML yielded no profiles, search the web
+    // ------------------------------------------------------------------
+    if (profiles.length === 0) {
+      console.log(`[social_media_agent] URL filter found no profiles from HTML — trying Tavily search for ${auditInput.name}`);
+      try {
+        const tavilyRes = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            api_key: process.env.TAVILY_API_KEY,
+            query: `${auditInput.name} official social media LinkedIn Instagram Facebook Twitter`,
+            search_depth: "basic",
+            max_results: 10,
+            include_domains: [
+              "linkedin.com",
+              "instagram.com",
+              "twitter.com",
+              "x.com",
+              "facebook.com",
+              "youtube.com",
+              "tiktok.com",
+              "pinterest.com",
+            ],
+          }),
+        });
+
+        if (tavilyRes.ok) {
+          const tavilyData = await tavilyRes.json() as { results?: { url: string; title: string; content: string }[] };
+          const searchSnippets = (tavilyData.results ?? [])
+            .map((r) => `${r.url}\n${r.title}\n${r.content}`)
+            .join("\n\n");
+
+          if (searchSnippets.trim()) {
+            const fallbackFilterResponse = await anthropic.messages.create({
+              model: "claude-sonnet-4-6",
+              max_tokens: 1024,
+              system: [{ type: "text", text: URL_FILTER_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+              messages: [{
+                role: "user",
+                content: [
+                  "User-provided social media URLs:",
+                  userSocialUrls || "None provided",
+                  "",
+                  "Web search results for company social profiles:",
+                  searchSnippets,
+                ].join("\n"),
+              }],
+            });
+
+            const fallbackBlock = fallbackFilterResponse.content[0];
+            if (fallbackBlock.type === "text") {
+              const fallbackResult = parseJsonResponse(fallbackBlock.text, "URL Filter Fallback");
+              profiles = (fallbackResult.profiles as SocialProfile[] | undefined) ?? [];
+              console.log(`[social_media_agent] Tavily fallback found ${profiles.length} profiles`);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[social_media_agent] Tavily fallback search failed:", e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 8. Guard: no social profiles found after fallback
     // ------------------------------------------------------------------
     if (profiles.length === 0) {
       const errMsg = "No social media profiles found";
@@ -477,7 +540,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 8. Crawl each profile URL with Tavily (parallel, non-fatal failures)
+    // 9. Crawl each profile URL with Tavily (parallel, non-fatal failures)
     // ------------------------------------------------------------------
     const crawledProfiles = await Promise.all(
       profiles.map(async (profile) => {
