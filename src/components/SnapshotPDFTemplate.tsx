@@ -10,6 +10,7 @@
  */
 
 import React from "react";
+import path from "path";
 import {
   Document,
   Page,
@@ -19,11 +20,38 @@ import {
   Image,
   Svg,
   Path,
+  Font,
+  Link,
 } from "@react-pdf/renderer";
 import { getScoreBand, SCORE_COLORS } from "@/lib/scoring";
 
 // ---------------------------------------------------------------------------
-// Palette — mirrors AuditPDFTemplate exactly
+// Poppins font registration (local files in public/fonts/)
+// ---------------------------------------------------------------------------
+
+const fontsDir = path.join(process.cwd(), "public", "fonts");
+
+Font.register({
+  family: "Poppins",
+  fonts: [
+    {
+      src: path.join(fontsDir, "Poppins-Regular.ttf"),
+      fontWeight: 400,
+    },
+    {
+      src: path.join(fontsDir, "Poppins-Bold.ttf"),
+      fontWeight: 700,
+    },
+    {
+      src: path.join(fontsDir, "Poppins-Italic.ttf"),
+      fontWeight: 400,
+      fontStyle: "italic",
+    },
+  ],
+});
+
+// ---------------------------------------------------------------------------
+// Palette
 // ---------------------------------------------------------------------------
 
 const colors = {
@@ -43,15 +71,19 @@ const colors = {
 
 const styles = StyleSheet.create({
   page: {
-    padding: 40,
-    fontFamily: "Helvetica",
+    paddingTop: 40,
+    paddingLeft: 40,
+    paddingRight: 40,
+    paddingBottom: 60,
+    fontFamily: "Poppins",
     fontSize: 11,
     color: colors.black,
     backgroundColor: colors.white,
   },
   sectionHeader: {
     fontSize: 13,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Poppins",
+    fontWeight: 700,
     color: colors.navy,
     marginBottom: 10,
     paddingBottom: 4,
@@ -60,13 +92,15 @@ const styles = StyleSheet.create({
   },
   itemTitle: {
     fontSize: 14,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Poppins",
+    fontWeight: 700,
     color: colors.black,
     marginBottom: 6,
   },
   contentHeader: {
     fontSize: 11,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Poppins",
+    fontWeight: 700,
     marginBottom: 3,
     marginTop: 4,
   },
@@ -86,13 +120,6 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.lightGrey,
     marginTop: 8,
     marginBottom: 8,
-  },
-  pageNumber: {
-    position: "absolute",
-    bottom: 20,
-    right: 40,
-    fontSize: 10,
-    color: colors.grey,
   },
   starsContainer: {
     flexDirection: "row",
@@ -151,9 +178,6 @@ export interface SnapshotPDFData {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/**
- * Renders a single five-pointed star as an SVG — filled or empty.
- */
 const StarIcon = ({
   filled,
   color,
@@ -171,9 +195,6 @@ const StarIcon = ({
   </Svg>
 );
 
-/**
- * Renders a row of five stars coloured according to the score band.
- */
 const Stars = ({ score }: { score: number }) => {
   const band = getScoreBand(score);
   return (
@@ -189,6 +210,36 @@ const Stars = ({ score }: { score: number }) => {
     </View>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Fixed page footer (appears on every content page)
+// ---------------------------------------------------------------------------
+
+const PageFooter = () => (
+  <View
+    fixed
+    style={{
+      position: "absolute",
+      bottom: 16,
+      left: 40,
+      right: 40,
+      borderTopWidth: 1,
+      borderTopColor: colors.lightGrey,
+      paddingTop: 6,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    }}
+  >
+    <Text style={{ fontSize: 7, color: colors.grey, fontFamily: "Poppins", fontWeight: 400 }}>
+      Prepared by Enid, a Brand Intelligence system by DLB Creative{"  "}dlb-creative.com | askenid.ai | hello@dlb-creative.com
+    </Text>
+    <Text
+      style={{ fontSize: 7, color: colors.grey }}
+      render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`}
+    />
+  </View>
+);
 
 // ---------------------------------------------------------------------------
 // Score context map
@@ -211,16 +262,10 @@ const SCORE_CONTEXT: Record<string, string> = {
 // Cover Page
 // ---------------------------------------------------------------------------
 
-/**
- * Standalone cover page: logo, title, company info, and a decorative yellow bar.
- */
 const CoverPage = ({
   data,
 }: {
-  data: Pick<
-    SnapshotPDFData,
-    "companyName" | "companyUrl" | "createdAt" | "logoSrc"
-  >;
+  data: Pick<SnapshotPDFData, "companyName" | "companyUrl" | "createdAt" | "logoSrc">;
 }) => {
   const formattedDate = new Date(data.createdAt).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -229,64 +274,47 @@ const CoverPage = ({
   });
 
   return (
-    <Page size="A4" style={[styles.page, { justifyContent: "center", alignItems: "center" }]}>
-      <View style={{ alignItems: "center", flex: 1, justifyContent: "center" }}>
-        <Image src={data.logoSrc} style={{ width: 160, marginBottom: 24 }} />
+    <Page size="A4" style={[styles.page, { paddingBottom: 40, justifyContent: "center", alignItems: "center" }]}>
+      <View style={{ alignItems: "center", width: "100%" }}>
+        {/* Logo */}
+        <Image src={data.logoSrc} style={{ width: 160, marginBottom: 40 }} />
 
+        {/* Title */}
         <Text
           style={{
-            fontSize: 32,
-            fontFamily: "Helvetica-Bold",
+            fontSize: 36,
+            fontFamily: "Poppins",
+            fontWeight: 700,
             color: colors.navy,
+            marginBottom: 48,
             textAlign: "center",
-            marginBottom: 16,
           }}
         >
           Brand Snapshot
         </Text>
 
-        <Text
-          style={{
-            fontSize: 20,
-            color: colors.grey,
-            textAlign: "center",
-            marginBottom: 4,
-          }}
-        >
-          {data.companyName}
-        </Text>
-
-        <Text
-          style={{
-            fontSize: 12,
-            color: colors.grey,
-            textAlign: "center",
-            marginTop: 4,
-          }}
-        >
-          {data.companyUrl}
-        </Text>
-
-        <Text
-          style={{
-            fontSize: 12,
-            color: colors.grey,
-            textAlign: "center",
-            marginTop: 8,
-          }}
-        >
-          {formattedDate}
-        </Text>
-
-        <View
-          style={{
-            height: 4,
-            backgroundColor: colors.yellow,
-            borderRadius: 2,
-            width: "100%",
-            marginTop: 32,
-          }}
-        />
+        {/* Metadata block — each row centered, label bold, value regular */}
+        {[
+          { label: "Prepared for", value: data.companyName },
+          { label: "Website reviewed", value: data.companyUrl },
+          { label: "Prepared by", value: "Enid by DLB Creative" },
+          { label: "Prepared on", value: formattedDate },
+        ].map(({ label, value }) => (
+          <Text
+            key={label}
+            style={{
+              fontSize: 10,
+              fontFamily: "Poppins",
+              fontWeight: 400,
+              color: colors.navy,
+              textAlign: "center",
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontWeight: 700 }}>{label}: </Text>
+            {value}
+          </Text>
+        ))}
       </View>
     </Page>
   );
@@ -296,13 +324,6 @@ const CoverPage = ({
 // Main Document
 // ---------------------------------------------------------------------------
 
-/**
- * The root React-PDF document for a Brand Snapshot report.
- * Pass this component to `pdf()` inside an API route to generate the buffer.
- *
- * @example
- * const buffer = await pdf(<SnapshotDocument data={snapshotData} />).toBuffer();
- */
 const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
   const { snapshot, seoVisibility, enidScore } = data;
   const band = getScoreBand(enidScore);
@@ -333,14 +354,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
       {/* ------------------------------------------------------------------ */}
       <Page size="A4" style={styles.page} wrap>
 
-        {/* Page numbers */}
-        <Text
-          style={styles.pageNumber}
-          render={({ pageNumber, totalPages }) =>
-            `${pageNumber} / ${totalPages}`
-          }
-          fixed
-        />
+        {/* Fixed footer on every page */}
+        <PageFooter />
 
         {/* ---------------------------------------------------------------- */}
         {/* 1. YOUR ENID SCORE                                               */}
@@ -358,7 +373,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               marginBottom: 4,
             }}
           >
-            {/* Score bubble */}
             <View
               style={{
                 width: 48,
@@ -374,7 +388,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               <Text
                 style={{
                   fontSize: 20,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: "Poppins",
+                  fontWeight: 700,
                   color: colors.white,
                 }}
               >
@@ -382,12 +397,12 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               </Text>
             </View>
 
-            {/* Label + stars + context */}
             <View style={{ flex: 1 }}>
               <Text
                 style={{
                   fontSize: 13,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: "Poppins",
+                  fontWeight: 700,
                   color: colors.navy,
                   marginBottom: 4,
                 }}
@@ -427,7 +442,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
 
         {snapshot.top_5_brand_value_leaks.map((leak) => (
           <View key={leak.rank} wrap={false}>
-            {/* Rank badge + issue */}
             <View
               style={{
                 flexDirection: "row",
@@ -448,7 +462,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
                 <Text
                   style={{
                     color: colors.white,
-                    fontFamily: "Helvetica-Bold",
+                    fontFamily: "Poppins",
+                    fontWeight: 700,
                     fontSize: 11,
                   }}
                 >
@@ -458,7 +473,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
 
               <Text
                 style={{
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: "Poppins",
+                  fontWeight: 700,
                   fontSize: 11,
                   flex: 1,
                   marginLeft: 8,
@@ -469,7 +485,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               </Text>
             </View>
 
-            {/* Impact */}
             <Text
               style={{
                 fontSize: 10,
@@ -510,7 +525,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
         <View wrap={false}>
           <Text style={styles.sectionHeader}>VISIBILITY SNAPSHOT</Text>
 
-          {/* Badge row */}
           <View
             style={{
               flexDirection: "row",
@@ -518,7 +532,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               marginBottom: 8,
             }}
           >
-            {/* Visibility score pill */}
             <View
               style={{
                 backgroundColor: visibilityBadgeColor,
@@ -530,7 +543,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               <Text
                 style={{
                   color: colors.white,
-                  fontFamily: "Helvetica-Bold",
+                  fontFamily: "Poppins",
+                  fontWeight: 700,
                   fontSize: 11,
                 }}
               >
@@ -538,7 +552,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
               </Text>
             </View>
 
-            {/* Indicator dots */}
             <View
               style={{
                 flexDirection: "row",
@@ -546,47 +559,34 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
                 marginLeft: 12,
               }}
             >
-              {/* Website */}
               <View
                 style={{
                   width: 8,
                   height: 8,
                   borderRadius: 4,
-                  backgroundColor: seoVisibility.websiteVisible
-                    ? colors.green
-                    : colors.lightGrey,
+                  backgroundColor: seoVisibility.websiteVisible ? colors.green : colors.lightGrey,
                   marginRight: 4,
                 }}
               />
-              <Text style={{ fontSize: 9, color: colors.grey, marginRight: 10 }}>
-                Website
-              </Text>
+              <Text style={{ fontSize: 9, color: colors.grey, marginRight: 10 }}>Website</Text>
 
-              {/* Social */}
               <View
                 style={{
                   width: 8,
                   height: 8,
                   borderRadius: 4,
-                  backgroundColor: seoVisibility.socialVisible
-                    ? colors.green
-                    : colors.lightGrey,
+                  backgroundColor: seoVisibility.socialVisible ? colors.green : colors.lightGrey,
                   marginRight: 4,
                 }}
               />
-              <Text style={{ fontSize: 9, color: colors.grey, marginRight: 10 }}>
-                Social
-              </Text>
+              <Text style={{ fontSize: 9, color: colors.grey, marginRight: 10 }}>Social</Text>
 
-              {/* Press */}
               <View
                 style={{
                   width: 8,
                   height: 8,
                   borderRadius: 4,
-                  backgroundColor: seoVisibility.pressVisible
-                    ? colors.green
-                    : colors.lightGrey,
+                  backgroundColor: seoVisibility.pressVisible ? colors.green : colors.lightGrey,
                   marginRight: 4,
                 }}
               />
@@ -606,7 +606,6 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
         {snapshot.what_to_fix_first.map((fix) => (
           <View key={fix.priority} wrap={false} style={{ marginBottom: 10 }}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              {/* Priority badge */}
               <View
                 style={{
                   width: 22,
@@ -621,7 +620,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
                 <Text
                   style={{
                     color: colors.white,
-                    fontFamily: "Helvetica-Bold",
+                    fontFamily: "Poppins",
+                    fontWeight: 700,
                     fontSize: 9,
                   }}
                 >
@@ -629,10 +629,7 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
                 </Text>
               </View>
 
-              {/* Action text */}
-              <Text
-                style={{ fontSize: 11, flex: 1, marginLeft: 8, color: colors.black }}
-              >
+              <Text style={{ fontSize: 11, flex: 1, marginLeft: 8, color: colors.black }}>
                 {fix.action}
               </Text>
             </View>
@@ -659,7 +656,8 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
             <Text
               style={{
                 fontSize: 12,
-                fontFamily: "Helvetica-Bold",
+                fontFamily: "Poppins",
+                fontWeight: 700,
                 color: colors.navy,
               }}
             >
@@ -667,6 +665,64 @@ const SnapshotDocument = ({ data }: { data: SnapshotPDFData }) => {
             </Text>
           </View>
         </View>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* CTA                                                              */}
+        {/* ---------------------------------------------------------------- */}
+        <View wrap={false} style={{ marginTop: 20, alignItems: "flex-start" }}>
+          <Link src="https://www.askenid.ai/" style={{ textDecoration: "none" }}>
+            <View
+              style={{
+                backgroundColor: "#4BBEC6",
+                borderRadius: 8,
+                paddingVertical: 10,
+                paddingHorizontal: 24,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Poppins",
+                  fontWeight: 700,
+                  color: colors.white,
+                }}
+              >
+                Ready to act on this?
+              </Text>
+            </View>
+          </Link>
+        </View>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* End Notes                                                        */}
+        {/* ---------------------------------------------------------------- */}
+        <View wrap={false} style={{ marginTop: 32 }}>
+          <View style={styles.divider} />
+
+          <Text
+            style={{
+              fontSize: 9,
+              lineHeight: 1.6,
+              color: colors.grey,
+              marginBottom: 10,
+              marginTop: 8,
+            }}
+          >
+            This Snapshot is a fast diagnostic of your brand's public-facing signal. It reviews how clearly your brand communicates who you are, who you are for, why you matter, and where value may be leaking across your digital presence.
+          </Text>
+
+          <Text
+            style={{
+              fontSize: 9,
+              lineHeight: 1.6,
+              color: colors.grey,
+              fontStyle: "italic",
+            }}
+          >
+            This Snapshot is based on publicly available brand, website, search, social, and press signals reviewed at the time of analysis. It is intended as a strategic diagnostic, not a full brand strategy, legal review, technical SEO audit, or market research study.
+          </Text>
+        </View>
+
       </Page>
     </Document>
   );

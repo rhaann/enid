@@ -42,7 +42,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Absolute path to the Enid logo for server-side PDF rendering. */
-const LOGO_PATH = path.join(process.cwd(), "public", "Enid_Wordmark_Full_Color.png");
+const LOGO_PATH = path.join(process.cwd(), "public", "Enid Full Logo Black.png");
 
 /** Known social media domains used to classify search result URLs. */
 const SOCIAL_DOMAINS = [
