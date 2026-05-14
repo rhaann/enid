@@ -50,7 +50,7 @@ export async function sendSnapshotEmail(
 <html lang="en">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;padding:40px 24px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:40px 24px;">
     <tr>
       <td>
 
