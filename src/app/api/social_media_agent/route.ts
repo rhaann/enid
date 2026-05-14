@@ -472,53 +472,20 @@ export async function POST(req: NextRequest) {
 
     console.log(`[social_media_agent] Regex extraction found ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
 
-    // ------------------------------------------------------------------
-    // 6b. Claude URL Filter — only runs if regex found nothing.
-    //     Used as a fallback for sites where social URLs are encoded,
-    //     relative, or otherwise not matching the regex patterns above.
-    // ------------------------------------------------------------------
-    if (profiles.length === 0) {
-      const userSocialUrls = Object.entries(userProvidedMap)
-        .filter(([, v]) => v)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join("\n");
-
-      const urlFilterMessage = [
-        "User-provided social media URLs:",
-        userSocialUrls || "None provided",
-        "",
-        "Scraped website HTML:",
-        combinedHtml || "No scraped HTML available",
-      ].join("\n");
-
-      const filterResponse = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: [{ type: "text", text: URL_FILTER_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: urlFilterMessage }],
-      });
-
-      const filterBlock = filterResponse.content[0];
-      if (filterBlock.type !== "text") {
-        throw new Error("URL Filter agent returned a non-text response block");
-      }
-
-      const filterResult = parseJsonResponse(filterBlock.text, "URL Filter Agent");
-      profiles = (filterResult.profiles as SocialProfile[] | undefined) ?? [];
-      console.log(`[social_media_agent] Claude URL filter found ${profiles.length} profiles`);
-    }
+    // The two most important platforms — if either is missing after regex,
+    // always run the Tavily fallback to try to find them.
+    const KEY_PLATFORMS: Platform[] = ["LinkedIn", "Instagram"];
+    const foundPlatforms = () => new Set(profiles.map((p) => p.platform));
+    const missingKeyPlatforms = () => KEY_PLATFORMS.filter((p) => !foundPlatforms().has(p));
 
     // ------------------------------------------------------------------
-    // 7. Tavily fallback — if HTML yielded no profiles, search the web
+    // 6b. Tavily fallback — always runs if LinkedIn or Instagram is missing.
+    //     Brand social pages follow platform.com/brandname, so we derive
+    //     the slug from the company domain and filter results by it.
     // ------------------------------------------------------------------
-    if (profiles.length === 0) {
-      // Fallback: derive the brand slug from the company domain and search
-      // Tavily for each platform using just the brand name. Brand social pages
-      // always follow the pattern platform.com/brandname, so we only accept
-      // Tavily result URLs that contain the brand slug in their path.
-      console.log(`[social_media_agent] HTML scrape found no profiles — trying brand-slug Tavily fallback for ${auditInput.name}`);
+    if (missingKeyPlatforms().length > 0) {
+      console.log(`[social_media_agent] Missing key platforms: ${missingKeyPlatforms().join(", ")} — running Tavily brand-slug search`);
       try {
-        // Derive slug from domain: "https://www.nike.com" → "nike"
         const brandSlug = (() => {
           try {
             return new URL(String(auditInput.url ?? ""))
@@ -536,8 +503,6 @@ export async function POST(req: NextRequest) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             api_key: process.env.TAVILY_API_KEY,
-            // Search just the brand name — not a long query — so each platform
-            // returns the brand's own profile page as the top result.
             query: auditInput.name,
             search_depth: "basic",
             max_results: 15,
@@ -559,10 +524,7 @@ export async function POST(req: NextRequest) {
           const resultUrls = (tavilyData.results ?? []).map((r) => r.url);
           console.log(`[social_media_agent] Tavily returned ${resultUrls.length} URLs:`, resultUrls);
 
-          // Platform-specific profile URL shapes — no content/post paths allowed.
-          // We also require the brand slug to appear in the URL path so we never
-          // pick up personal profiles, random posts, or unrelated brand pages.
-          const SOCIAL_PATTERNS: Array<{ re: RegExp; platform: Platform }> = [
+          const TAVILY_PATTERNS: Array<{ re: RegExp; platform: Platform }> = [
             { re: /linkedin\.com\/company\/[^/?#\s]+/,        platform: "LinkedIn"  },
             { re: /instagram\.com\/[^/?#\s]+/,                 platform: "Instagram" },
             { re: /(?:twitter|x)\.com\/[^/?#\s]+/,            platform: "Twitter/X" },
@@ -571,26 +533,24 @@ export async function POST(req: NextRequest) {
             { re: /tiktok\.com\/@[^/?#\s]+/,                   platform: "TikTok"   },
             { re: /pinterest\.com\/[^/?#\s]+/,                 platform: "Pinterest" },
           ];
-          // Content/post paths that are never profile pages
           const CONTENT_PATH_RE = /\/(reel|p|tv|stories|posts?|photo|video|watch|shorts|playlist|status|pin)\//i;
+          const alreadyFound = foundPlatforms();
 
-          const seenPlatforms = new Set<string>();
           for (const url of resultUrls) {
             if (CONTENT_PATH_RE.test(url)) continue;
-            // Only accept if the brand slug appears somewhere in the URL path
             if (brandSlug && !url.toLowerCase().includes(brandSlug)) continue;
-            for (const { re, platform } of SOCIAL_PATTERNS) {
-              if (re.test(url) && !seenPlatforms.has(platform)) {
+            for (const { re, platform } of TAVILY_PATTERNS) {
+              if (re.test(url) && !alreadyFound.has(platform)) {
                 profiles.push({ platform, url });
-                seenPlatforms.add(platform);
+                alreadyFound.add(platform);
                 break;
               }
             }
           }
-          console.log(`[social_media_agent] Brand-slug fallback found ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
+          console.log(`[social_media_agent] After Tavily: ${profiles.length} total profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
         }
       } catch (e) {
-        console.warn("[social_media_agent] Tavily fallback search failed:", e instanceof Error ? e.message : String(e));
+        console.warn("[social_media_agent] Tavily search failed:", e instanceof Error ? e.message : String(e));
       }
     }
 
