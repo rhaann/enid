@@ -192,11 +192,33 @@ export async function GET(req: Request) {
       .eq("audit_input_id", audit.id)
       .maybeSingle();
 
-    // Send if: no snapshot row yet, or snapshot exists but was never emailed
-    if (!snap || !snap.emailed_at) {
-      auditForEmail = audit as { id: string; name: string; url: string; email: string };
-      break;
+    // Already emailed — skip
+    if (snap?.emailed_at) continue;
+
+    // Guard: wait until competitor and social agents have both written results
+    // before generating the snapshot, so the PDF includes all sections.
+    const [{ data: competitorRow }, { data: socialRow }] = await Promise.all([
+      supabaseAdmin
+        .from("dlb_competitor_agent_results")
+        .select("id")
+        .eq("audit_input_id", audit.id)
+        .limit(1)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("dlb_social_media_agent_results")
+        .select("id")
+        .eq("audit_input_id", audit.id)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (!competitorRow || !socialRow) {
+      console.log(`[cron/phase2] Skipping ${audit.id} — waiting for competitor (${!!competitorRow}) and social (${!!socialRow}) agents`);
+      continue;
     }
+
+    auditForEmail = audit as { id: string; name: string; url: string; email: string };
+    break;
   }
 
   if (auditForEmail) {
