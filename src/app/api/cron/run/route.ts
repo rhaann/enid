@@ -89,7 +89,7 @@ export async function GET(req: Request) {
 
   const { data: pending, error: pendingError } = await supabaseAdmin
     .from("dlb_audit_inputs")
-    .select("id, name, url")
+    .select("id, name, url, email")
     .is("status", null)
     .lte("scheduled_for", now)
     .order("scheduled_for", { ascending: true })
@@ -164,6 +164,7 @@ export async function GET(req: Request) {
         await sendAdminFailureAlert(
           String(pending.name ?? "Unknown"),
           String(pending.url ?? ""),
+          String(pending.email ?? ""),
           msg
         ).catch((e) => console.error("[cron/phase1] Resend alert failed:", e));
       }
@@ -240,6 +241,7 @@ export async function GET(req: Request) {
         await sendAdminFailureAlert(
           String(auditForEmail!.name ?? "Unknown"),
           String(auditForEmail!.url ?? ""),
+          String(auditForEmail!.email ?? ""),
           `Snapshot generation / email failed: ${msg}`
         ).catch((e) => console.error("[cron/phase2] Resend alert failed:", e));
       }

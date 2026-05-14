@@ -96,6 +96,7 @@ export async function sendSnapshotEmail(
 export async function sendAdminFailureAlert(
   companyName: string,
   companyUrl: string,
+  clientEmail: string,
   errorMessage: string
 ): Promise<void> {
   const adminEmails = [
@@ -116,6 +117,7 @@ export async function sendAdminFailureAlert(
       <h2 style="color:#c0392b;">Audit Failed</h2>
       <p><strong>Company:</strong> ${companyName}</p>
       <p><strong>Website:</strong> <a href="${companyUrl}">${companyUrl}</a></p>
+      <p><strong>Client Email:</strong> <a href="mailto:${clientEmail}">${clientEmail}</a></p>
       <hr/>
       <p><strong>Error:</strong></p>
       <pre style="background:#f5f5f5;padding:12px;border-radius:4px;font-size:13px;">${errorMessage}</pre>
