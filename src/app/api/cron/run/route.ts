@@ -195,9 +195,14 @@ export async function GET(req: Request) {
     // Already emailed — skip
     if (snap?.emailed_at) continue;
 
-    // Guard: wait until competitor and social agents have both written results
-    // before generating the snapshot, so the PDF includes all sections.
-    const [{ data: competitorRow }, { data: socialRow }] = await Promise.all([
+    // Guard: wait until competitor and social agents are settled — either they
+    // produced results (rows exist) or they explicitly failed (workflow_run
+    // status = Failed). If neither condition is met the agent is still running.
+    const [
+      { data: competitorRow },
+      { data: socialRow },
+      { data: workflowRuns },
+    ] = await Promise.all([
       supabaseAdmin
         .from("dlb_competitor_agent_results")
         .select("id")
@@ -210,10 +215,49 @@ export async function GET(req: Request) {
         .eq("audit_input_id", audit.id)
         .limit(1)
         .maybeSingle(),
+      supabaseAdmin
+        .from("workflow_runs")
+        .select("workflow_name, status")
+        .eq("audit_input_id", audit.id)
+        .in("workflow_name", ["competitor-agent", "social-media-agent"]),
     ]);
 
-    if (!competitorRow || !socialRow) {
-      console.log(`[cron/phase2] Skipping ${audit.id} — waiting for competitor (${!!competitorRow}) and social (${!!socialRow}) agents`);
+    const failedAgents = new Set(
+      (workflowRuns ?? [])
+        .filter((r) => r.status === "Failed")
+        .map((r) => r.workflow_name)
+    );
+
+    const competitorSettled = !!competitorRow || failedAgents.has("competitor-agent");
+    const socialSettled     = !!socialRow     || failedAgents.has("social-media-agent");
+
+    // Still running — check again next cron tick
+    if (!competitorSettled || !socialSettled) {
+      console.log(`[cron/phase2] Skipping ${audit.id} — waiting for competitor (settled:${competitorSettled}) and social (settled:${socialSettled})`);
+      continue;
+    }
+
+    // One or more agents failed — alert admin and mark as handled so we
+    // don't re-alert every 10 minutes. Do NOT send a partial snapshot.
+    const failedNames = [...failedAgents].join(", ");
+    if (failedAgents.size > 0) {
+      console.warn(`[cron/phase2] Agent(s) failed for ${audit.id}: ${failedNames} — alerting admin, skipping client email`);
+
+      await sendAdminFailureAlert(
+        String(audit.name ?? "Unknown"),
+        String(audit.url ?? ""),
+        String(audit.email ?? ""),
+        `The following agents failed and the snapshot was not sent to the client: ${failedNames}`
+      ).catch((e) => console.error("[cron/phase2] Admin alert failed:", e));
+
+      // Stamp emailed_at to prevent re-processing on future cron ticks
+      await supabaseAdmin
+        .from("dlb_snapshot_results")
+        .upsert(
+          { audit_input_id: audit.id, emailed_at: new Date().toISOString() },
+          { onConflict: "audit_input_id" }
+        );
+
       continue;
     }
 
