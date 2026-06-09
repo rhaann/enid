@@ -34,6 +34,67 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export async function POST(req: Request) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return Response.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  const { companyName, websiteUrl, email, industry, location, targetLocation,
+    social, competitorUrls, objectives, companyStage, companySize, businessGoals } =
+    body as Record<string, unknown>;
+
+  if (!companyName || !websiteUrl || !email) {
+    return Response.json(
+      { error: "Company name, website URL, and email are required." },
+      { status: 400 }
+    );
+  }
+
+  const { data, error } = await supabase()
+    .from("dlb_audit_inputs")
+    .insert({
+      name: companyName as string,
+      url: websiteUrl as string,
+      email: email as string,
+      industry: (industry as string) || null,
+      location: (location as string) || null,
+      target_location: (targetLocation as string) || null,
+      company_stage: (companyStage as string) || null,
+      company_size: (companySize as string) || null,
+      business_goals: (businessGoals as string) || null,
+      objective: Array.isArray(objectives) && objectives.length > 0 ? objectives : null,
+      competitor_urls: Array.isArray(competitorUrls) && (competitorUrls as string[]).filter(Boolean).length > 0
+        ? (competitorUrls as string[]).filter(Boolean)
+        : null,
+      linkedin_url: (social as Record<string, string>)?.linkedin || null,
+      x_url: (social as Record<string, string>)?.twitter || null,
+      facebook_url: (social as Record<string, string>)?.facebook || null,
+      instagram_url: (social as Record<string, string>)?.instagram || null,
+      pinterest_url: (social as Record<string, string>)?.pinterest || null,
+      youtube_url: (social as Record<string, string>)?.youtube || null,
+      tiktok_url: (social as Record<string, string>)?.tiktok || null,
+      status: null,
+      is_test: true,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[audits/POST] Insert error:", error);
+    return Response.json({ error: "Failed to create audit." }, { status: 500 });
+  }
+
+  return Response.json({ success: true, id: data.id }, { status: 201 });
+}
+
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin) {
@@ -50,6 +111,24 @@ export async function GET() {
   }
 
   const auditIds = (data ?? []).map((r: any) => r.id);
+
+  // Find audits where social or competitor agents are still actively running.
+  // These are "Done" in dlb_audit_inputs (evaluator finished) but the sub-agents
+  // haven't settled yet — we surface this as "Finalizing" on the dashboard so
+  // admins aren't misled into thinking the full pipeline is complete.
+  const agentsStillRunning = new Set<string>();
+  if (auditIds.length > 0) {
+    const { data: activeRuns } = await supabase()
+      .from("workflow_runs")
+      .select("audit_input_id")
+      .in("audit_input_id", auditIds)
+      .in("workflow_name", ["social-media-agent", "competitor-agent"])
+      .eq("status", "In Progress");
+
+    for (const run of activeRuns ?? []) {
+      agentsStillRunning.add(run.audit_input_id);
+    }
+  }
 
   let assetsByAudit: Record<string, any[]> = {};
   if (auditIds.length > 0) {
@@ -76,7 +155,9 @@ export async function GET() {
     callDate: null,
     callTime: null,
     callEndTime: null,
-    status: normalizeStatus(r.status),
+    status: normalizeStatus(r.status) === "done" && agentsStillRunning.has(r.id)
+      ? "in_progress"
+      : normalizeStatus(r.status),
     companyStage: r.company_stage ?? "",
     companySize: r.company_size ?? "",
     industry: r.industry ?? "",

@@ -141,6 +141,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .in("status", ["In Progress", "Failed"])
       .order("created_at", { ascending: false });
 
+    // Separately check whether the sub-agents (competitor + social) have a
+    // "Done" row. This is needed to detect the case where the agent ran and
+    // completed but produced no data rows — without this, the UI would keep
+    // spinning forever because there's no data and no error to stop on.
+    const { data: completedSubAgents } = await supabase()
+      .from("workflow_runs")
+      .select("workflow_name")
+      .eq("audit_input_id", id)
+      .in("workflow_name", ["competitor-agent", "social-media-agent"])
+      .eq("status", "Done");
+
+    const completedAgentNames = new Set(
+      (completedSubAgents ?? []).map((r: { workflow_name: string }) => r.workflow_name)
+    );
+
     const activeAgents: string[] = [];
     const errorByAgent: Record<string, string> = {};
     const seenAgents = new Set<string>();
@@ -167,6 +182,34 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           errorByAgent[run.workflow_name] = run.error_message ?? "An unknown error occurred";
         }
       }
+    }
+
+    // If a sub-agent completed ("Done") but produced no data, surface a soft
+    // message so the UI knows to stop polling rather than spinning indefinitely.
+    const hasCompetitorData = competitorResult.status === "fulfilled" && (competitorResult.value.data?.length ?? 0) > 0;
+    const hasSocialData = socialResult.status === "fulfilled" && (socialResult.value.data?.length ?? 0) > 0;
+
+    if (completedAgentNames.has("competitor-agent") && !hasCompetitorData && !errorByAgent["competitor-agent"]) {
+      errorByAgent["competitor-agent"] = "No competitor data was returned for this audit.";
+    }
+    if (completedAgentNames.has("social-media-agent") && !hasSocialData && !errorByAgent["social-media-agent"]) {
+      errorByAgent["social-media-agent"] = "No social media data was returned for this audit.";
+    }
+
+    // For old audits that predate workflow_runs tracking (or where the agent was
+    // never triggered), there will be zero rows in workflow_runs for that agent.
+    // If the evaluator is "Done" and we have no tracking at all for a sub-agent
+    // and no data, stop polling by surfacing a soft error — otherwise the UI
+    // spins forever because isComplete() never returns true.
+    const evaluatorDone = auditInput?.status?.toLowerCase() === "done";
+    const hasCompetitorTracking = completedAgentNames.has("competitor-agent") || seenAgents.has("competitor-agent");
+    const hasSocialTracking = completedAgentNames.has("social-media-agent") || seenAgents.has("social-media-agent");
+
+    if (evaluatorDone && !hasCompetitorTracking && !hasCompetitorData && !errorByAgent["competitor-agent"]) {
+      errorByAgent["competitor-agent"] = "No competitor data was returned for this audit.";
+    }
+    if (evaluatorDone && !hasSocialTracking && !hasSocialData && !errorByAgent["social-media-agent"]) {
+      errorByAgent["social-media-agent"] = "No social media data was returned for this audit.";
     }
 
     return Response.json({

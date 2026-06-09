@@ -232,23 +232,94 @@ function parsePlatformJson(
 // Tavily crawl
 // ---------------------------------------------------------------------------
 
+/** Platform-to-domain map used to constrain Tavily search results. */
+const PLATFORM_DOMAINS: Partial<Record<Platform, string>> = {
+  LinkedIn:   "linkedin.com",
+  Instagram:  "instagram.com",
+  "Twitter/X": "x.com",
+  Facebook:   "facebook.com",
+  YouTube:    "youtube.com",
+  TikTok:     "tiktok.com",
+  Pinterest:  "pinterest.com",
+};
+
+// First path segments that are never a social profile — share widgets, redirect
+// pages, and generic platform pages scraped from websites.
+const NON_PROFILE_FIRST_SEGMENTS = new Set([
+  "share", "intent", "sharer", "dialog", "shareArticle",
+  "home", "explore", "notifications", "settings", "search",
+  "hashtag", "trending", "discover", "feed",
+]);
+
 /**
- * Crawls a social media profile URL using Tavily search and returns
- * a formatted string of the page content for Claude to analyse.
- *
- * @param url - The social media profile URL to crawl.
- * @returns Formatted content string, or "Profile could not be crawled" on failure.
+ * Returns true only if the URL's first path segment looks like a profile path.
+ * Rejects share-widget intents (twitter.com/share?...) and generic platform
+ * pages (facebook.com/home) that get scraped from "Share" buttons in HTML.
  */
-async function crawlWithTavily(url: string): Promise<string> {
+function isProfilePath(url: string): boolean {
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+    const first = parsed.pathname.split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
+    if (!first) return false;
+    if (NON_PROFILE_FIRST_SEGMENTS.has(first)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Crawls a confirmed social media profile URL.
+ *
+ * Strategy:
+ *  1. Try Tavily /extract — loads the URL directly (best signal for confirmed profiles).
+ *  2. Fall back to a targeted Tavily search constrained to the platform domain,
+ *     using the company name + platform as the query for richer results.
+ *
+ * @param url         - The confirmed social media profile URL.
+ * @param platform    - The platform being crawled (used for domain filtering).
+ * @param companyName - The company name (used for the search query fallback).
+ * @returns Formatted content string, or empty string on total failure.
+ */
+async function crawlWithTavily(
+  url: string,
+  platform: Platform,
+  companyName: string
+): Promise<string> {
+  // 1. Try Tavily extract — actually loads the URL rather than searching for it.
+  try {
+    const extractRes = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        urls: [url],
+      }),
+    });
+    if (extractRes.ok) {
+      const extractData = await extractRes.json() as {
+        results?: Array<{ url: string; raw_content: string }>;
+      };
+      const content = extractData.results?.[0]?.raw_content ?? "";
+      if (content.length > 400) {
+        return content.slice(0, 40_000);
+      }
+    }
+  } catch { /* fall through to search */ }
+
+  // 2. Targeted search fallback — constrained to the platform domain with a
+  //    company-name query so results are about this brand, not random pages.
+  const domain = PLATFORM_DOMAINS[platform];
   const res = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       api_key: process.env.TAVILY_API_KEY,
-      query: url,
+      query: `${companyName} ${platform}`,
       search_depth: "advanced",
       max_results: 5,
       include_answer: true,
+      ...(domain ? { include_domains: [domain] } : {}),
     }),
   });
 
@@ -267,35 +338,50 @@ async function crawlWithTavily(url: string): Promise<string> {
 
   return data.answer
     ? `Summary: ${data.answer}\n\nSources:\n${snippets}`
-    : snippets || "Profile could not be crawled";
+    : snippets || "";
 }
 
 // ---------------------------------------------------------------------------
 // Platform audit
 // ---------------------------------------------------------------------------
 
+/** Company context passed into each platform audit so Claude can calibrate scores. */
+interface CompanyContext {
+  name: string;
+  industry: string;
+  companySize: string;
+  companyStage: string;
+}
+
 /**
  * Audits a single social media platform profile using Claude.
  *
  * Selects the correct system prompt based on platform, passes the crawled
- * content as the user message, and returns a typed SocialPlatformResult.
+ * content and company context as the user message, and returns a typed
+ * SocialPlatformResult.
  *
  * @param platform       - The platform being audited.
  * @param url            - The profile URL.
  * @param crawledContent - Content returned by crawlWithTavily().
  * @param auditInputId   - The parent audit ID (used for logging context).
+ * @param context        - Company metadata for score calibration.
  */
 async function auditSocialPlatform(
   platform: Platform,
   url: string,
   crawledContent: string,
-  auditInputId: string
+  auditInputId: string,
+  context: CompanyContext
 ): Promise<SocialPlatformResult> {
   const systemPrompt = PLATFORM_PROMPTS[platform];
 
   const userMessage = [
     `Platform URL: ${url}`,
     `Audit Input ID: ${auditInputId}`,
+    `Company Name: ${context.name}`,
+    `Industry: ${context.industry || "Not specified"}`,
+    `Company Size: ${context.companySize || "Not specified"}`,
+    `Company Stage: ${context.companyStage || "Not specified"}`,
     "",
     "Crawled profile content:",
     crawledContent.slice(0, 40_000) || "Profile could not be crawled",
@@ -452,17 +538,19 @@ export async function POST(req: NextRequest) {
       Pinterest:  auditInput.pinterest_url || undefined,
     };
     for (const [platform, url] of Object.entries(userProvidedMap)) {
-      if (url) profiles.push({ platform: platform as Platform, url });
+      if (url && isProfilePath(url)) profiles.push({ platform: platform as Platform, url });
     }
 
-    // Regex-extract from HTML for any platform not already provided
+    // Regex-extract from HTML for any platform not already provided.
+    // Only accept URLs whose path/handle matches this brand — the HTML may
+    // contain links to third-party pages (e.g. athlete profiles, partners).
     const seenPlatformsRegex = new Set(profiles.map((p) => p.platform));
     for (const { platform, re } of REGEX_SOCIAL_PATTERNS) {
       if (seenPlatformsRegex.has(platform)) continue;
       const matches = [...new Set(combinedHtml.match(re) ?? [])];
       const profileMatch = matches.find((url) => {
         const path = url.replace(/^https?:\/\/(www\.)?[^/]+/i, "");
-        return path.length > 1; // exclude bare domain roots
+        return path.length > 1 && isProfilePath(url) && isBrandHandle(url);
       });
       if (profileMatch) {
         profiles.push({ platform, url: profileMatch });
@@ -472,21 +560,39 @@ export async function POST(req: NextRequest) {
 
     console.log(`[social_media_agent] Regex extraction found ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
 
-    // Derive brand slug once — used in both Tavily search and slug construction.
-    const brandSlug = (() => {
+    // ------------------------------------------------------------------
+    // 6b. Brand handle validation helper.
+    //     Auto-discovered URLs (regex + Tavily) may pick up links to third
+    //     parties mentioned on the site — e.g. athlete pages linked from
+    //     a brand's website. This checks that the URL path (the social
+    //     handle) actually belongs to the company being audited by comparing
+    //     it against the domain slug and company name slug.
+    //     User-provided URLs are always trusted and never filtered here.
+    // ------------------------------------------------------------------
+    const brandSlugForValidation = (() => {
       try {
         return new URL(String(auditInput.url ?? ""))
-          .hostname
-          .replace(/^www\./, "")
-          .split(".")[0]
-          .toLowerCase();
+          .hostname.replace(/^www\./, "").split(".")[0].toLowerCase();
       } catch { return ""; }
     })();
+    const nameSlugForValidation = String(auditInput.name ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
 
-    console.log(`[social_media_agent] Brand slug: "${brandSlug}"`);
+    function isBrandHandle(url: string): boolean {
+      // If we have no brand identifiers we can't validate — accept the URL.
+      if (!brandSlugForValidation && !nameSlugForValidation) return true;
+      // Extract just the handle segment from the URL path.
+      const raw = url.replace(/^https?:\/\/(www\.)?[^/]+\//i, "").split(/[/?#]/)[0];
+      const handle = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (!handle) return false;
+      if (brandSlugForValidation && handle.includes(brandSlugForValidation)) return true;
+      if (nameSlugForValidation && handle.includes(nameSlugForValidation)) return true;
+      return false;
+    }
 
     // ------------------------------------------------------------------
-    // 6b. Tavily web search — finds the brand's ACTUAL social handles.
+    // 6c. Tavily web search — finds the brand's ACTUAL social handles.
     //     Searches broadly (no include_domains) so results include press
     //     releases, directories, and the brand's own site — all of which
     //     mention their real social profile URLs. Works for any brand,
@@ -532,8 +638,9 @@ export async function POST(req: NextRequest) {
           const matches = [...new Set(allText.match(re) ?? [])];
           const profileMatch = matches.find((url) => {
             if (CONTENT_PATH_RE.test(url)) return false;
+            if (!isProfilePath(url)) return false;
             const path = url.replace(/^https?:\/\/(www\.)?[^/]+/i, "");
-            return path.length > 1;
+            return path.length > 1 && isBrandHandle(url);
           });
           if (profileMatch) {
             profiles.push({ platform, url: profileMatch });
@@ -547,33 +654,22 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 6c. Slug construction — last resort for any platform still missing.
-    //     Constructs canonical URLs from the domain slug (nike.com → nike).
-    //     Works reliably for Nike-sized brands. For smaller brands with
-    //     different handles, the Tavily crawl step will surface low content
-    //     and scores will naturally reflect a weak/missing presence.
+    // 7. Determine which platforms were NOT found.
+    //    We intentionally do NOT construct guessed URLs from the domain
+    //    slug — that was the primary source of hallucinated phantom profiles.
+    //    If a platform isn't found via user input, regex, or Tavily search,
+    //    we tell the user it was not found rather than inventing a URL.
     // ------------------------------------------------------------------
-    if (brandSlug) {
-      const alreadyFound = new Set(profiles.map((p) => p.platform));
-      const SLUG_CANDIDATES: Array<{ platform: Platform; url: string }> = [
-        { platform: "LinkedIn",  url: `https://www.linkedin.com/company/${brandSlug}/` },
-        { platform: "Instagram", url: `https://www.instagram.com/${brandSlug}/` },
-        { platform: "Twitter/X", url: `https://x.com/${brandSlug}` },
-        { platform: "Facebook",  url: `https://www.facebook.com/${brandSlug}` },
-        { platform: "YouTube",   url: `https://www.youtube.com/@${brandSlug}` },
-        { platform: "TikTok",    url: `https://www.tiktok.com/@${brandSlug}` },
-      ];
-      for (const candidate of SLUG_CANDIDATES) {
-        if (!alreadyFound.has(candidate.platform)) {
-          profiles.push(candidate);
-          alreadyFound.add(candidate.platform);
-        }
-      }
-      console.log(`[social_media_agent] After slug construction: ${profiles.length} profiles:`, profiles.map((p) => `${p.platform}: ${p.url}`));
-    }
+    const ALL_PLATFORMS: Platform[] = [
+      "LinkedIn", "Instagram", "Twitter/X", "Facebook", "YouTube", "TikTok", "Pinterest",
+    ];
+    const foundPlatformSet = new Set(profiles.map((p) => p.platform));
+    const notFoundPlatforms = ALL_PLATFORMS.filter((p) => !foundPlatformSet.has(p));
+
+    console.log(`[social_media_agent] Not found: ${notFoundPlatforms.join(", ") || "none"}`);
 
     // ------------------------------------------------------------------
-    // 8. Guard: no social profiles found after fallback
+    // 8. Guard: no social profiles found at all
     // ------------------------------------------------------------------
     if (profiles.length === 0) {
       const errMsg = "No social media profiles found";
@@ -582,43 +678,118 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 9. Crawl each profile URL with Tavily (parallel, non-fatal failures)
+    // 9. Build company context for score calibration
+    // ------------------------------------------------------------------
+    const companyContext: CompanyContext = {
+      name: String(auditInput.name ?? ""),
+      industry: String(auditInput.industry ?? ""),
+      companySize: String(auditInput.company_size ?? ""),
+      companyStage: String(auditInput.company_stage ?? ""),
+    };
+
+    // ------------------------------------------------------------------
+    // 10. Crawl each confirmed profile URL with Tavily (parallel, non-fatal)
     // ------------------------------------------------------------------
     const crawledProfiles = await Promise.all(
       profiles.map(async (profile) => {
-        let content: string;
+        let content = "";
         try {
-          content = await crawlWithTavily(profile.url);
+          content = await crawlWithTavily(profile.url, profile.platform, companyContext.name);
         } catch (e) {
           console.warn(
             `[social_media_agent] Tavily crawl failed for ${profile.url}: ${
               e instanceof Error ? e.message : String(e)
             }`
           );
-          content = "Profile could not be crawled";
         }
         return { ...profile, crawledContent: content };
       })
     );
 
     // ------------------------------------------------------------------
-    // 9. Audit each platform in parallel
+    // 10b. Data quality gate — skip platforms where we couldn't get
+    //      meaningful content. Auditing on sparse data produces hallucinated
+    //      low scores. Tell the user these platforms "could not be audited"
+    //      rather than showing them misleading numbers.
+    // ------------------------------------------------------------------
+    const DATA_QUALITY_MIN_CHARS = 400;
+    const toAudit = crawledProfiles.filter(
+      (p) => p.crawledContent.length >= DATA_QUALITY_MIN_CHARS
+    );
+    const insufficientDataPlatforms = crawledProfiles
+      .filter((p) => p.crawledContent.length < DATA_QUALITY_MIN_CHARS)
+      .map((p) => p.platform);
+
+    if (insufficientDataPlatforms.length > 0) {
+      console.log(
+        `[social_media_agent] Insufficient data (skipping audit): ${insufficientDataPlatforms.join(", ")}`
+      );
+    }
+
+    // Merge not-found and insufficient-data into one list for reporting.
+    const allNotAuditedPlatforms = [...notFoundPlatforms, ...insufficientDataPlatforms];
+
+    // If every found profile also had insufficient data, fail cleanly.
+    if (toAudit.length === 0) {
+      const errMsg = "No social media profiles could be crawled with sufficient data";
+      await completeWorkflowRun(workflowRunId, true, errMsg);
+      return NextResponse.json({ error: errMsg }, { status: 422 });
+    }
+
+    // ------------------------------------------------------------------
+    // 11. Audit each platform with sufficient data in parallel
     // ------------------------------------------------------------------
     const platformResults = await Promise.all(
-      crawledProfiles.map((p) =>
-        auditSocialPlatform(p.platform, p.url, p.crawledContent, audit_input_id)
+      toAudit.map((p) =>
+        auditSocialPlatform(p.platform, p.url, p.crawledContent, audit_input_id, companyContext)
       )
     );
 
     // ------------------------------------------------------------------
-    // 10. Run Cross-Platform Evaluation agent
+    // 11b. Post-audit filter — discard results where Claude scored every
+    //      category 0. This means the URL returned no usable profile data
+    //      (e.g. a share-intent link that passed the pre-filter). These
+    //      are treated the same as "insufficient data" and not shown to
+    //      the user.
     // ------------------------------------------------------------------
+    const validPlatformResults = platformResults.filter((r) => r.platform_average > 0);
+    const zeroScorePlatforms = platformResults
+      .filter((r) => r.platform_average === 0)
+      .map((r) => r.platform_type as Platform);
+    if (zeroScorePlatforms.length > 0) {
+      console.warn(
+        `[social_media_agent] Discarding zero-score results (no usable profile data): ${zeroScorePlatforms.join(", ")}`
+      );
+    }
+    const finalNotAuditedPlatforms = [...allNotAuditedPlatforms, ...zeroScorePlatforms];
+
+    if (validPlatformResults.length === 0) {
+      const errMsg = "No valid social media profiles could be audited";
+      await completeWorkflowRun(workflowRunId, true, errMsg);
+      return NextResponse.json({ error: errMsg }, { status: 422 });
+    }
+
+    // ------------------------------------------------------------------
+    // 12. Run Cross-Platform Evaluation agent
+    //     Include company context and note which platforms were not found.
+    // ------------------------------------------------------------------
+    const notAuditedNote = finalNotAuditedPlatforms.length > 0
+      ? `\nPlatforms not audited (not found or insufficient data): ${finalNotAuditedPlatforms.join(", ")}`
+      : "";
+
     const crossPlatformMessage = [
+      "Company Context:",
+      `Name: ${companyContext.name}`,
+      `Industry: ${companyContext.industry || "Not specified"}`,
+      `Size: ${companyContext.companySize || "Not specified"}`,
+      `Stage: ${companyContext.companyStage || "Not specified"}`,
+      notAuditedNote,
+      "",
       "Brand Evaluation Context:",
       JSON.stringify(brandEval ?? {}),
       "",
       "Individual Platform Audit Results:",
-      ...platformResults.map(
+      ...validPlatformResults.map(
         (r) => `\n--- ${r.platform_type} (${r.social_media_url}) ---\n${JSON.stringify(r)}`
       ),
     ].join("\n");
@@ -646,6 +817,11 @@ export async function POST(req: NextRequest) {
       "Cross-Platform Evaluation Agent"
     );
 
+    // Inject not-audited platforms deterministically — Claude must not guess these.
+    if (finalNotAuditedPlatforms.length > 0) {
+      (crossResult as Record<string, unknown>).not_found_platforms = finalNotAuditedPlatforms;
+    }
+
     // Serialise the full cross-platform JSON as overal_evaluation text so the
     // existing mapWebhookToAudit parser can extract structured fields from it.
     const overalEvaluationText = JSON.stringify(crossResult);
@@ -655,7 +831,7 @@ export async function POST(req: NextRequest) {
     // ------------------------------------------------------------------
     const companyName = (auditInput.name as string) ?? "";
 
-    for (const result of platformResults) {
+    for (const result of validPlatformResults) {
       const { error: insertError } = await supabaseAdmin
         .from("dlb_social_media_agent_results")
         .insert({
@@ -691,7 +867,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      platforms_audited: platformResults.length,
+      platforms_audited: validPlatformResults.length,
     });
   } catch (e) {
     const errorMessage =

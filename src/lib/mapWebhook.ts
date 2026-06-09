@@ -274,11 +274,26 @@ function extractSocialMediaReport(data: any): SocialMediaReport | undefined {
       ? Math.round(averages.reduce((a, b) => a + b, 0) / averages.length)
       : 0;
 
+    // Extract not_found_platforms injected by the agent after cross-platform synthesis.
+    let notFoundPlatforms: string[] | undefined;
+    const evalObj = typeof rawEval === "object" && rawEval !== null ? rawEval : null;
+    if (evalObj && Array.isArray((evalObj as any).not_found_platforms)) {
+      notFoundPlatforms = (evalObj as any).not_found_platforms as string[];
+    } else if (typeof rawEval === "string") {
+      try {
+        const parsed = JSON.parse(rawEval);
+        if (parsed?.not_found_platforms && Array.isArray(parsed.not_found_platforms)) {
+          notFoundPlatforms = parsed.not_found_platforms as string[];
+        }
+      } catch { /* ignore */ }
+    }
+
     return {
       platformsAnalyzed,
       platformScores,
       overallEvaluation,
       overallScore,
+      ...(notFoundPlatforms?.length ? { notFoundPlatforms } : {}),
     };
   }
 

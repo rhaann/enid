@@ -27,11 +27,25 @@ export async function fetchAuditById(id: string): Promise<AuditReport> {
   if (json.activeAgents) {
     report.activeAgents = json.activeAgents;
   }
+  // "No data was returned" is a soft / informational signal — the agent ran (or
+  // the pipeline settled) but produced no rows. Show "Not Available" in the UI
+  // rather than an amber "Error" card. Any other message is a real agent error.
+  const SOFT_NO_DATA = "No competitor data was returned for this audit.";
+  const SOFT_NO_SOCIAL = "No social media data was returned for this audit.";
+
   if (typeof json.competitor_error === "string") {
-    report.competitorError = json.competitor_error;
+    if (json.competitor_error === SOFT_NO_DATA) {
+      report.competitorSettled = true;
+    } else {
+      report.competitorError = json.competitor_error;
+    }
   }
   if (typeof json.social_error === "string") {
-    report.socialMediaError = json.social_error;
+    if (json.social_error === SOFT_NO_SOCIAL) {
+      report.socialSettled = true;
+    } else {
+      report.socialMediaError = json.social_error;
+    }
   }
   return report;
 }

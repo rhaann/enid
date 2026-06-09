@@ -45,6 +45,8 @@ export type SocialMediaReport = {
   platformScores: Record<string, SocialPlatformReport>;
   overallEvaluation: string;
   overallScore: number;
+  /** Platforms where no URL was found or data was insufficient to audit. */
+  notFoundPlatforms?: string[];
   crossPlatformScores?: Record<string, { score: number; assessment: string }>;
   overallAssessment?: {
     overallScore: number;
@@ -133,7 +135,14 @@ export type AuditReport = {
   };
   socialMediaReport?: SocialMediaReport;
   socialMediaError?: string;
+  /** Real agent error — show amber "Error During Processing" UI. */
   competitorError?: string;
+  /**
+   * Agent completed (or evaluator finished with no agent tracking) but produced
+   * no data. Show "Not Available" UI instead of an error, and stop polling.
+   */
+  competitorSettled?: boolean;
+  socialSettled?: boolean;
 };
 
 export const fakeAudit: AuditReport = {

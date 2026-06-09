@@ -62,19 +62,19 @@ type AuditRequest = {
 const DONE_STATUS = { label: "Done", color: "text-emerald-700", bg: "bg-emerald-50" };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  not_started: { label: "Not started", color: "text-zinc-600", bg: "bg-zinc-100" },
+  not_started: { label: "Not started", color: "text-zinc-600",  bg: "bg-zinc-100" },
   in_progress: { label: "In progress", color: "text-amber-700", bg: "bg-amber-50" },
-  done: DONE_STATUS,
-  failed: { label: "Failed", color: "text-red-600", bg: "bg-red-50" },
+  done:        DONE_STATUS,
+  failed:      { label: "Failed",      color: "text-red-600",   bg: "bg-red-50"   },
 };
 
 const FALLBACK_STATUS = { label: "Unknown", color: "text-zinc-500", bg: "bg-zinc-50" };
 
 const SUMMARY_CARDS: { key: AuditStatus; label: string; cardBg: string; numColor: string }[] = [
-  { key: "not_started", label: "NOT STARTED", cardBg: "bg-zinc-50 border-zinc-200", numColor: "text-zinc-800" },
-  { key: "in_progress", label: "IN PROGRESS", cardBg: "bg-amber-50/60 border-amber-200", numColor: "text-amber-700" },
-  { key: "done", label: "DONE", cardBg: "bg-emerald-50/60 border-emerald-200", numColor: "text-emerald-700" },
-  { key: "failed", label: "FAILED", cardBg: "bg-red-50/60 border-red-200", numColor: "text-red-600" },
+  { key: "not_started", label: "NOT STARTED", cardBg: "bg-zinc-50 border-zinc-200",         numColor: "text-zinc-800"    },
+  { key: "in_progress", label: "IN PROGRESS", cardBg: "bg-amber-50/60 border-amber-200",    numColor: "text-amber-700"  },
+  { key: "done",        label: "DONE",        cardBg: "bg-emerald-50/60 border-emerald-200", numColor: "text-emerald-700" },
+  { key: "failed",      label: "FAILED",      cardBg: "bg-red-50/60 border-red-200",        numColor: "text-red-600"    },
 ];
 
 const ASSET_TYPE_COLORS: Record<string, string> = {
@@ -1257,15 +1257,12 @@ function EditableInfoCard({
   );
 }
 
-/* ─── Main Dashboard ─── */
-
 export default function DashboardPage() {
   const router = useRouter();
 
   const [audits, setAudits] = useState<AuditRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [search, setSearch] = useState("");

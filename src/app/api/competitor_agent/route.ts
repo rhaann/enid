@@ -168,7 +168,14 @@ async function searchExa(
 ): Promise<string[]> {
   if (numResults <= 0) return [];
 
-  const body: Record<string, unknown> = { query, numResults, type: "auto" };
+  const body: Record<string, unknown> = {
+    query,
+    numResults,
+    type: "auto",
+    // Only return results classified as company websites — prevents EXA from
+    // returning article/blog pages that merely discuss competitors.
+    category: "company",
+  };
   if (excludeDomains.length > 0) {
     body.excludeDomains = excludeDomains;
   }
@@ -188,7 +195,10 @@ async function searchExa(
   }
 
   const data = (await res.json()) as { results?: ExaResult[] };
-  return (data.results ?? []).map((r) => r.url).filter(Boolean);
+  return (data.results ?? [])
+    .map((r) => r.url)
+    .filter(Boolean)
+    .filter(isCompanyUrl);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,29 +401,164 @@ async function analyzeCompetitor(
 }
 
 // ---------------------------------------------------------------------------
-// EXA query builder
+// Competitor name discovery via Claude + Tavily
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a natural-language EXA search query from the audit input and brand
- * overview assessment. Keeps each part short to stay within EXA's query limits.
+ * Asks Claude to identify real direct competitors of the given company by name.
+ * Claude has access to the Tavily web_search tool so it can look up live data
+ * for lesser-known companies (local PE firms, niche consultancies, etc.) where
+ * training knowledge is sparse or absent.
  *
- * @param auditInput     - Raw dlb_audit_inputs row.
- * @param brandAssessment - Text from dlb_brand_eval_results.brand_overview.assessment.
+ * For well-known brands Claude answers from training data without a tool call.
+ * For obscure companies it searches Tavily before answering.
+ *
+ * Returns an array of company name strings (not URLs). The caller is responsible
+ * for resolving each name to an official website URL via EXA.
+ *
+ * @param companyName - The client company's name.
+ * @param industry    - Industry / sector, if known.
+ * @param city        - City the client operates in, for local competitor context.
+ * @param exclude     - Company names already confirmed (Case B top-up).
+ * @param count       - How many competitor names to return.
  */
-function buildExaQuery(
-  auditInput: Record<string, unknown>,
-  brandAssessment?: string
-): string {
-  const parts: string[] = [
-    `Competitors of ${(auditInput.name as string) ?? "this company"}`,
+async function discoverCompetitorNames(
+  companyName: string,
+  industry: string | undefined,
+  city: string,
+  exclude: string[] = [],
+  count = 4
+): Promise<string[]> {
+  const lines: string[] = [
+    `Identify the top ${count} real, direct competitors of "${companyName}".`,
   ];
-  if (auditInput.industry) parts.push(`a ${auditInput.industry} company`);
-  if (brandAssessment) parts.push(brandAssessment.slice(0, 200));
-  if (auditInput.business_goals) {
-    parts.push(String(auditInput.business_goals).slice(0, 200));
+  if (industry) lines.push(`Industry: ${industry}`);
+  if (city) lines.push(`Location: ${city} (include local competitors if relevant)`);
+  if (exclude.length > 0) lines.push(`Exclude (already confirmed): ${exclude.join(", ")}`);
+  lines.push(
+    "",
+    "Competitors must:",
+    "- Sell the same or highly similar products/services to the same customers",
+    "- Have their own publicly accessible website",
+    "- Be real, active companies",
+    "",
+    "If you are confident you know the competitors from training data, answer directly.",
+    "If the company is obscure, local, or niche and you are unsure, use the web_search tool",
+    `to search for 'competitors of ${companyName}${industry ? ` ${industry}` : ""}${city ? ` in ${city}` : ""}' before answering.`,
+    "",
+    `Return ONLY a JSON array of ${count} company names. Example: ["Adidas", "Puma", "Under Armour", "New Balance"]`,
+    "No markdown, no explanations — JSON array only."
+  );
+
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: "user", content: lines.join("\n") },
+  ];
+
+  // Allow up to 4 turns: 1 for the initial response, 1 for a Tavily call,
+  // 1 for the tool result, 1 for the final answer.
+  const MAX_TURNS = 4;
+
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 512,
+      tools: [TAVILY_TOOL],
+      tool_choice: { type: "auto" },
+      messages,
+    });
+
+    messages.push({ role: "assistant", content: response.content });
+
+    if (response.stop_reason === "tool_use") {
+      const toolUseBlocks = response.content.filter(
+        (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
+      );
+      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = await Promise.all(
+        toolUseBlocks.map(async (toolUse) => {
+          let content: string;
+          try {
+            const { query } = toolUse.input as { query: string };
+            content = await callTavily(query);
+          } catch (e) {
+            content = `Tool error: ${e instanceof Error ? e.message : String(e)}`;
+          }
+          return { type: "tool_result" as const, tool_use_id: toolUse.id, content };
+        })
+      );
+      messages.push({ role: "user", content: toolResults });
+      continue;
+    }
+
+    if (response.stop_reason === "end_turn") {
+      const text =
+        response.content.find((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+          ?.text ?? "[]";
+      try {
+        const match = text.trim().match(/\[[\s\S]*?\]/);
+        const arr = JSON.parse(match?.[0] ?? "[]");
+        return Array.isArray(arr)
+          ? (arr as unknown[]).filter((s): s is string => typeof s === "string").slice(0, count)
+          : [];
+      } catch {
+        console.warn("[competitor_agent] Failed to parse competitor names:", text.slice(0, 200));
+        return [];
+      }
+    }
   }
-  return parts.join(". ");
+
+  console.warn("[competitor_agent] discoverCompetitorNames exceeded MAX_TURNS");
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// Homepage lookup via EXA (by company name)
+// ---------------------------------------------------------------------------
+
+/**
+ * Finds the official homepage of a company given its name.
+ * Passes `category: "company"` so EXA returns company websites, not articles.
+ *
+ * @param name     - Company name, e.g. "Adidas".
+ * @param industry - Optional industry hint to disambiguate common names.
+ * @param excludeDomains - Domains to exclude (client's own domain, etc.).
+ */
+async function findCompanyHomepage(
+  name: string,
+  industry: string | undefined,
+  excludeDomains: string[] = []
+): Promise<string | null> {
+  const query = industry ? `${name} ${industry}` : name;
+  // Request 3 results so we have fallbacks if the top hit is a subdomain / redirect
+  const results = await searchExa(query, 3, excludeDomains).catch(() => [] as string[]);
+  return results[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// URL quality filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns false if the URL is clearly an article, blog post, or other
+ * non-homepage page. Acts as a lightweight guard after EXA discovery.
+ *
+ * The primary guard is the `category: "company"` filter on the EXA request;
+ * this is a belt-and-suspenders fallback for any edge cases that slip through.
+ */
+function isCompanyUrl(url: string): boolean {
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+    const path = parsed.pathname;
+    // Reject obvious article / blog paths
+    if (/\/(blog|article|post|news|case[-_]study|guide|analysis|wiki)/i.test(path)) {
+      return false;
+    }
+    // Reject if the path is 3+ segments deep — almost certainly not a homepage
+    const segments = path.split("/").filter(Boolean);
+    if (segments.length >= 3) return false;
+    return true;
+  } catch {
+    return true; // Unparseable URL — let it through; Claude will handle it
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -492,7 +637,7 @@ export async function POST(req: NextRequest) {
     const [{ data: brandEval }, { data: websiteEval }] = await Promise.all([
       supabaseAdmin
         .from("dlb_brand_eval_results")
-        .select("brand_overview")
+        .select("id")
         .eq("dlb_audit_input_id", audit_input_id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -520,90 +665,87 @@ export async function POST(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 5. Build EXA search query
-    // ------------------------------------------------------------------
-    const brandOverview = brandEval?.brand_overview as
-      | { assessment?: string }
-      | null;
-    const exaQuery = buildExaQuery(
-      auditInput as Record<string, unknown>,
-      brandOverview?.assessment
-    );
-
-    // ------------------------------------------------------------------
-    // 6. Determine competitor target list — pure TypeScript, no LLM
+    // 5. Resolve confirmed competitor URLs and client context
     // ------------------------------------------------------------------
     const confirmedUrls = parseCompetitorUrls(auditInput.competitor_urls);
     const ownDomain = normalizeDomain((auditInput.url as string) ?? "");
+    const exaExclude = ownDomain ? [ownDomain] : [];
     // Prefer the explicit location field; fall back to target_location for old records
     const clientLocation = (auditInput.location as string) || (auditInput.target_location as string) || "";
     // City = everything before the first comma (e.g. "Nashville" from "Nashville, TN, USA")
     const clientCity = clientLocation.includes(",")
       ? clientLocation.split(",")[0].trim()
       : clientLocation;
+    const industry = (auditInput.industry as string | undefined) || undefined;
 
     let targets: CompetitorTarget[] = [];
 
+    // ------------------------------------------------------------------
+    // 6. Determine competitor target list
+    //
+    // Strategy: use Claude (Haiku) to identify real competitor names, then
+    // use EXA to resolve each name to an official website URL. This is far
+    // more accurate than asking EXA to discover competitors directly — EXA's
+    // neural search returns pages semantically related to the brand (licensees,
+    // partners, analysis sites) instead of actual competitor homepages.
+    // ------------------------------------------------------------------
+
     if (confirmedUrls.length >= 4) {
-      // Case A: client provided 4+ URLs — use first 4, skip EXA entirely.
-      // Claude will determine the correct type based on actual location.
+      // Case A: client provided 4+ URLs — use as-is, skip all discovery.
+      // analyzeCompetitor will determine the correct competitor_type from the
+      // actual headquarters location.
       targets = confirmedUrls
         .slice(0, 4)
         .map((url) => ({ url, competitor_type: "national" as const }));
+
     } else if (confirmedUrls.length >= 1) {
-      // Case B: 1–3 confirmed URLs — top up with EXA.
+      // Case B: 1–3 confirmed URLs — ask Claude for the names of the missing
+      // competitors, then resolve each name to a homepage via EXA.
       const needed = 4 - confirmedUrls.length;
-      const localCount = Math.floor(needed / 3);
-      const nationalCount = Math.floor(needed / 3);
-      const globalCount = needed - localCount - nationalCount;
+      const confirmedDomains = confirmedUrls.map(normalizeDomain);
+      const additionalNames = await discoverCompetitorNames(
+        (auditInput.name as string) ?? "this company",
+        industry,
+        clientCity,
+        [], // names of confirmed are unknown; dedup by domain below
+        needed + 1 // request one extra as buffer in case a URL isn't found
+      );
 
-      // Run only the searches that are non-zero.
-      type SearchEntry = { type: "local" | "national" | "global"; count: number; suffix: string };
-      const searchPlan: SearchEntry[] = ([
-        { type: "local" as const, count: localCount, suffix: `competitor based in ${clientCity || "same city"}` },
-        { type: "national" as const, count: nationalCount, suffix: "competitor in same country" },
-        { type: "global" as const, count: globalCount, suffix: "international competitor" },
-      ] as SearchEntry[]).filter((s) => s.count > 0);
-
-      const exaExclude = ownDomain ? [ownDomain] : [];
-      const exaResults = await Promise.all(
-        searchPlan.map((s) => searchExa(`${exaQuery} ${s.suffix}`, s.count, exaExclude))
+      const additionalExclude = [...exaExclude, ...confirmedDomains];
+      const additionalUrls = await Promise.all(
+        additionalNames.map((name) => findCompanyHomepage(name, industry, additionalExclude))
       );
 
       targets = [
-        ...confirmedUrls.map((url) => ({
-          url,
-          competitor_type: "national" as const,
-        })),
-        ...exaResults.flatMap((urls, i) =>
-          urls.map((url) => ({
-            url,
-            competitor_type: searchPlan[i].type,
-          }))
-        ),
+        ...confirmedUrls.map((url) => ({ url, competitor_type: "national" as const })),
+        ...additionalUrls
+          .filter((url): url is string => url !== null)
+          .map((url) => ({ url, competitor_type: "national" as const })),
       ];
-    } else {
-      // Case C: no confirmed URLs — run 3 parallel EXA searches (3 each so
-      // we have buffer after deduplication, aiming for ~1-2 per type).
-      const cityStr = clientCity || "worldwide";
-      const exaExclude = ownDomain ? [ownDomain] : [];
-      const [localUrls, nationalUrls, globalUrls] = await Promise.all([
-        searchExa(`${exaQuery} competitor based in ${cityStr}`, 3, exaExclude),
-        searchExa(`${exaQuery} competitor in same country different city`, 3, exaExclude),
-        searchExa(`${exaQuery} international competitor`, 3, exaExclude),
-      ]);
 
-      targets = [
-        ...localUrls.map((url) => ({ url, competitor_type: "local" as const })),
-        ...nationalUrls.map((url) => ({
-          url,
-          competitor_type: "national" as const,
-        })),
-        ...globalUrls.map((url) => ({
-          url,
-          competitor_type: "global" as const,
-        })),
-      ];
+    } else {
+      // Case C: no confirmed URLs — full Claude-driven discovery.
+      const names = await discoverCompetitorNames(
+        (auditInput.name as string) ?? "this company",
+        industry,
+        clientCity,
+        [],
+        5 // request 5 so we have a buffer if one URL lookup fails
+      );
+
+      if (names.length === 0) {
+        throw new Error(
+          "Could not identify competitors for this company. Add competitor URLs manually and retry."
+        );
+      }
+
+      const urls = await Promise.all(
+        names.map((name) => findCompanyHomepage(name, industry, exaExclude))
+      );
+
+      targets = urls
+        .filter((url): url is string => url !== null)
+        .map((url) => ({ url, competitor_type: "national" as const }));
     }
 
     // Dedupe by domain and drop the client's own domain.

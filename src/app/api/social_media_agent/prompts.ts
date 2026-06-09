@@ -24,7 +24,7 @@ export type Platform =
 
 const SHARED_SCORING_FRAMEWORK = `
 SCORING FRAMEWORK:
-Scores are integers 0-100 for each of the 6 categories. Be evidence-based and harsh — do NOT inflate scores without clear proof.
+Scores are integers 0-100 for each of the 6 categories. Be accurate and evidence-based. Calibrate scores to the company's size, industry, and stage — a small local business posting weekly should score differently than an enterprise brand. Do not inflate scores without evidence, but equally do not penalise for the absence of information you were never given.
 
 Score bands:
 - 0-20:  Critical / Non-functional (no real presence or severe deficiencies)
@@ -35,11 +35,12 @@ Score bands:
 - 81-90: Strong (high quality, clear intentionality)
 - 91-100: Exceptional (best-in-class, benchmark-setting)
 
-Signal caps — you CANNOT exceed these thresholds without listed evidence:
-- Cannot exceed 70 without consistent recent activity (within last 30 days)
-- Cannot exceed 80 without clear brand alignment AND demonstrated content quality
-- Cannot exceed 90 without measurable audience engagement AND strategic posting cadence
-- Cannot exceed 95 without exceptional community building AND platform-native innovation
+Evidence requirements — note in the assessment if you cannot verify these, and reflect that uncertainty in your score rather than defaulting to a floor:
+- Score above 70 should be supported by evidence of consistent activity within the last 30 days
+- Score above 80 should be supported by clear brand alignment AND demonstrated content quality
+- Score above 90 should be supported by measurable audience engagement AND strategic posting cadence
+- Score above 95 should be supported by exceptional community building AND platform-native innovation
+If the crawled data does not provide clear evidence for a category, state that in the assessment and score conservatively — do NOT invent activity or metrics that are not present in the data.
 
 platform_average is the mean of all 6 category scores, rounded to the nearest integer.
 

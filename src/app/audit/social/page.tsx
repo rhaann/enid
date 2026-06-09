@@ -195,7 +195,25 @@ export default function SocialMediaReportPage() {
               </div>
             );
           })}
+
+          {/* Not-found platforms — shown as grayed-out tiles, no score */}
+          {(sm.notFoundPlatforms ?? []).map((platform) => (
+            <div
+              key={platform}
+              className="flex items-center justify-between rounded-lg bg-white/5 px-4 py-3 opacity-60"
+            >
+              <span className="font-medium text-white/60">{platform}</span>
+              <span className="text-xs text-white/40 italic">Not found</span>
+            </div>
+          ))}
         </div>
+
+        {/* Not-found explanation note */}
+        {(sm.notFoundPlatforms ?? []).length > 0 && (
+          <p className="text-xs text-white/40 leading-relaxed">
+            Profiles marked "Not found" could not be discovered via the company website, public search, or user-provided links.
+          </p>
+        )}
 
         {/* Platform Priority */}
         {(() => {

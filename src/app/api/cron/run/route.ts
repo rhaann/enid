@@ -89,7 +89,7 @@ export async function GET(req: Request) {
 
   const { data: pending, error: pendingError } = await supabaseAdmin
     .from("dlb_audit_inputs")
-    .select("id, name, url, email")
+    .select("id, name, url, email, is_test")
     .is("status", null)
     .lte("scheduled_for", now)
     .order("scheduled_for", { ascending: true })
@@ -161,12 +161,16 @@ export async function GET(req: Request) {
           })
           .eq("id", pending.id);
 
-        await sendAdminFailureAlert(
-          String(pending.name ?? "Unknown"),
-          String(pending.url ?? ""),
-          String(pending.email ?? ""),
-          msg
-        ).catch((e) => console.error("[cron/phase1] Resend alert failed:", e));
+        if (!pending.is_test) {
+          await sendAdminFailureAlert(
+            String(pending.name ?? "Unknown"),
+            String(pending.url ?? ""),
+            String(pending.email ?? ""),
+            msg
+          ).catch((e) => console.error("[cron/phase1] Resend alert failed:", e));
+        } else {
+          console.log(`[cron/phase1] Skipping failure alert for test audit ${pending.id}`);
+        }
       }
     });
   }
@@ -176,10 +180,12 @@ export async function GET(req: Request) {
   // ------------------------------------------------------------------
 
   // Fetch a small batch of Done audits, then find the first without an email.
+  // is_test rows never get snapshot emails — skip them entirely
   const { data: doneAudits } = await supabaseAdmin
     .from("dlb_audit_inputs")
     .select("id, name, url, email")
     .eq("status", "Done")
+    .eq("is_test", false)
     .order("status_updated_at", { ascending: true })
     .limit(20);
 

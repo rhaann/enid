@@ -204,7 +204,13 @@ export async function POST(req: NextRequest) {
     const scrapedPages: { url: string; html: string }[] = [];
     try {
       for (const url of selectedUrls) {
-        const scrapeResult = await firecrawl.scrape(url, { formats: ["html"] });
+        const scrapeResult = await firecrawl.scrape(url, {
+          formats: ["html"],
+          // Disable main-content-only filtering so headers, footers, and navigation
+          // are included. Social media links almost always live in the footer, and
+          // stripping it means the social agent and evaluator never see them.
+          onlyMainContent: false,
+        });
         const html = scrapeResult.html ?? "";
 
         const { error: insertError } = await supabaseAdmin

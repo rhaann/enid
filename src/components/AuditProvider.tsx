@@ -10,10 +10,12 @@ const MAX_POLLS = 90; // 15 minutes — covers evaluator (5min) + competitor + s
 
 // Audit is fully complete only when both competitor and social have results or errors.
 // "done" on the audit input just means the evaluator finished — not the full pipeline.
+// competitorSettled / socialSettled mean the pipeline settled with no data (old audits
+// or agents that ran but produced no rows) — treated as complete for polling purposes.
 function isComplete(a: AuditReport): boolean {
   if (a.auditStatus?.toLowerCase() === "failed") return true;
-  const hasSocial = !!a.socialMediaReport || !!a.socialMediaError;
-  const hasCompetitor = !!a.competitorReport || !!a.competitorError;
+  const hasSocial = !!a.socialMediaReport || !!a.socialMediaError || !!a.socialSettled;
+  const hasCompetitor = !!a.competitorReport || !!a.competitorError || !!a.competitorSettled;
   return hasSocial && hasCompetitor;
 }
 
@@ -37,34 +39,15 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
   const pollCount = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // While polling is active, any section that has no data and no error is
+  // considered pending — we don't know if it's still running or hasn't started
+  // yet. The caller is responsible for only calling this while polling is live;
+  // when polling ends we clear pendingSections directly so the UI shows the
+  // true final state (data, error, or genuinely unavailable).
   function computePending(a: AuditReport): string[] {
-    const activeAgents = a.activeAgents ?? [];
-    const status = a.auditStatus?.toLowerCase();
     const pending: string[] = [];
-
-    // A section is only pending if its agent is actively running, OR the evaluator
-    // hasn't finished dispatching sub-agents yet, OR the audit is recent enough
-    // that the agent may still be starting up (covers the brief gap between the
-    // evaluator finishing and the sub-agent appearing in activeAgents).
-    // After 15 minutes with no data, we stop spinning — the pipeline has had
-    // enough time to complete and the missing data won't arrive.
-    const evaluatorRunning = !status || status === "in progress";
-    const isRecent =
-      !!a.createdAt &&
-      Date.now() - new Date(a.createdAt).getTime() < 15 * 60 * 1000;
-
-    if (
-      activeAgents.includes("social-media-agent") ||
-      (!a.socialMediaReport && !a.socialMediaError && (evaluatorRunning || isRecent))
-    ) {
-      pending.push("social");
-    }
-    if (
-      activeAgents.includes("competitor-agent") ||
-      (!a.competitorReport && !a.competitorError && (evaluatorRunning || isRecent))
-    ) {
-      pending.push("competitors");
-    }
+    if (!a.socialMediaReport && !a.socialMediaError && !a.socialSettled) pending.push("social");
+    if (!a.competitorReport && !a.competitorError && !a.competitorSettled) pending.push("competitors");
     return pending;
   }
 
@@ -81,7 +64,13 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     function scheduleRefetch() {
-      if (cancelled || pollCount.current >= MAX_POLLS) return;
+      if (cancelled) return;
+      // Polling limit reached — whatever is missing at this point is genuinely
+      // unavailable. Clear pending so the UI stops spinning and shows the real state.
+      if (pollCount.current >= MAX_POLLS) {
+        setPendingSections([]);
+        return;
+      }
       timerRef.current = setTimeout(async () => {
         if (cancelled) return;
         pollCount.current += 1;
@@ -89,8 +78,13 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
           const updated = await fetchAuditById(auditId!);
           if (cancelled) return;
           setAudit(updated);
-          setPendingSections(computePending(updated));
-          if (!isComplete(updated)) scheduleRefetch();
+          if (isComplete(updated)) {
+            // Pipeline finished — set final state and stop polling.
+            setPendingSections([]);
+          } else {
+            setPendingSections(computePending(updated));
+            scheduleRefetch();
+          }
         } catch {
           if (!cancelled) scheduleRefetch();
         }
@@ -102,8 +96,12 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           setAudit(mapped);
           setLoading(false);
-          setPendingSections(computePending(mapped));
-          if (!isComplete(mapped)) scheduleRefetch();
+          if (isComplete(mapped)) {
+            setPendingSections([]);
+          } else {
+            setPendingSections(computePending(mapped));
+            scheduleRefetch();
+          }
         }
       })
       .catch((e) => {
