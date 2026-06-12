@@ -492,6 +492,8 @@ export async function POST(req: NextRequest) {
       }
 
       // Step 5: Call Claude snapshot agent
+
+      // Social payload — explicit context so Claude uses accurate language
       const socialPayload =
         socialRows.length > 0
           ? socialRows
@@ -504,8 +506,29 @@ export async function POST(req: NextRequest) {
                 "explain why establishing one is critical for brand visibility and trust.",
             };
 
+      // Interpretation notes — prevent Claude from mis-reading scores
+      const dataInterpretationNotes = {
+        social_consistency_check_meaning:
+          "The social_consistency_check field in website_eval measures only whether the " +
+          "company's website HTML contains visible links TO their social profiles. " +
+          "A low score means social profile links are absent from the website pages — " +
+          "it does NOT mean the company has no social presence. " +
+          "If social profiles were audited above, those profiles exist and are real. " +
+          "Write 'social profiles are not linked from the website' not 'no social media presence'.",
+        social_status:
+          socialRows.length > 0
+            ? `${socialRows.length} social platform(s) were found and audited. These profiles are real and active.`
+            : "No social profiles were discovered for this company.",
+        snapshot_purpose:
+          "This snapshot is a teaser preview — the goal is to show the client the breadth of " +
+          "what Enid can find across their entire brand. Surface the most strategically important " +
+          "business issues, not just social media gaps. The most valuable findings are usually " +
+          "about brand clarity, positioning, website conversion, and competitive differentiation.",
+      };
+
       const userMessage = JSON.stringify(
         {
+          data_interpretation_notes: dataInterpretationNotes,
           company_info: auditInput,
           website_eval: websiteRow,
           brand_eval: brandRow,
