@@ -30,12 +30,21 @@ import React from "react";
 import path from "path";
 import { requireAdmin } from "@/lib/supabase/auth";
 import { SnapshotDocument } from "@/components/SnapshotPDFTemplate";
+import { SnapshotDocumentV2 } from "@/components/snapshot-v2/SnapshotDocumentV2";
 import { SNAPSHOT_SYSTEM_PROMPT } from "./prompts";
 import type {
   SnapshotPDFData,
   SnapshotResult,
   SeoVisibility,
 } from "@/components/SnapshotPDFTemplate";
+import type { SnapshotV2Data } from "@/components/snapshot-v2/SnapshotDocumentV2";
+
+/** Per-section 0-100 scores shown on the v2 template's "Signal Snapshots" page. */
+interface SignalScores {
+  brand: number;
+  website: number;
+  visibility: number;
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -177,51 +186,95 @@ function extractScore(field: unknown, key: string): number | null {
  * @param brandRow     - Single row from dlb_brand_eval_results (required).
  * @param socialRows   - All rows from dlb_social_media_agent_results (may be empty).
  */
+/** Average of the 8 website sub-scores, 0 if none are parseable. */
+function computeWebsiteScore(websiteRow: Record<string, unknown>): number {
+  const scores: number[] = [];
+  for (const field of WEBSITE_SCORE_FIELDS) {
+    const s = extractScore(websiteRow[field], "Score");
+    if (s !== null) scores.push(s);
+  }
+  return scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+}
+
+/** Average of the 6 brand sub-scores, 0 if none are parseable. */
+function computeBrandScore(brandRow: Record<string, unknown>): number {
+  const scores: number[] = [];
+  for (const field of BRAND_SCORE_FIELDS) {
+    const s = extractScore(brandRow[field], "score");
+    if (s !== null) scores.push(s);
+  }
+  return scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+}
+
+/**
+ * Social score from overall_assessment.overall_score only (avoids
+ * double-counting per-platform averages). 0 if no social presence was found.
+ */
+function computeSocialScore(socialRows: Record<string, unknown>[]): number {
+  if (socialRows.length === 0) return 0;
+  const raw = socialRows[0]["overal_evaluation"];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const overall = Number(
+      (parsed as Record<string, Record<string, unknown>>)?.["overall_assessment"]?.["overall_score"]
+    );
+    return !isNaN(overall) && overall > 0 ? overall : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Calculates the Enid Score using a section-weighted average:
+ *   Brand 40% | Website 35% | Social 25%
+ *
+ * Brand and website rows are required — call sites should guard against null
+ * before calling this. Social defaults to 0 if no rows exist (no social
+ * presence is a real gap and should lower the score).
+ *
+ * @param websiteRow   - Single row from dlb_website_eval_results (required).
+ * @param brandRow     - Single row from dlb_brand_eval_results (required).
+ * @param socialRows   - All rows from dlb_social_media_agent_results (may be empty).
+ */
 function calculateEnidScore(
   websiteRow: Record<string, unknown>,
   brandRow: Record<string, unknown>,
   socialRows: Record<string, unknown>[]
 ): number {
-  // Website — average of up to 8 sub-scores
-  const websiteScores: number[] = [];
-  for (const field of WEBSITE_SCORE_FIELDS) {
-    const s = extractScore(websiteRow[field], "Score");
-    if (s !== null) websiteScores.push(s);
-  }
-  const websiteScore =
-    websiteScores.length > 0
-      ? websiteScores.reduce((a, b) => a + b, 0) / websiteScores.length
-      : 0;
-
-  // Brand — average of up to 6 sub-scores
-  const brandScores: number[] = [];
-  for (const field of BRAND_SCORE_FIELDS) {
-    const s = extractScore(brandRow[field], "score");
-    if (s !== null) brandScores.push(s);
-  }
-  const brandScore =
-    brandScores.length > 0
-      ? brandScores.reduce((a, b) => a + b, 0) / brandScores.length
-      : 0;
-
-  // Social — use overall_assessment.overall_score only (avoids double-counting
-  // per-platform averages). Defaults to 0 if no social presence was found.
-  let socialScore = 0;
-  if (socialRows.length > 0) {
-    const raw = socialRows[0]["overal_evaluation"];
-    try {
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      const overall = Number(
-        (parsed as Record<string, Record<string, unknown>>)?.["overall_assessment"]?.["overall_score"]
-      );
-      if (!isNaN(overall) && overall > 0) socialScore = overall;
-    } catch {
-      // overall score not parseable — social stays 0
-    }
-  }
+  const websiteScore = computeWebsiteScore(websiteRow);
+  const brandScore = computeBrandScore(brandRow);
+  const socialScore = computeSocialScore(socialRows);
 
   // Weighted average: Brand 40% | Website 35% | Social 25%
   return Math.round(brandScore * 0.4 + websiteScore * 0.35 + socialScore * 0.25);
+}
+
+/**
+ * Per-section 0-100 scores for the v2 template's "Signal Snapshots" page.
+ * Brand/Website reuse the same sub-score averages as the overall Enid Score.
+ * Visibility has no existing numeric score (only a Strong/Moderate/Weak
+ * label) — derived deterministically from the same 3 boolean visibility
+ * flags already computed by checkSeoVisibility, so it stays consistent with
+ * that label and doesn't depend on an LLM (an LLM-assigned number could
+ * vary between identical requests, which is wrong for something displayed
+ * as an objective score).
+ */
+function calculateSignalScores(
+  websiteRow: Record<string, unknown>,
+  brandRow: Record<string, unknown>,
+  seoVisibility: SeoVisibility
+): SignalScores {
+  const trueCount = [
+    seoVisibility.websiteVisible,
+    seoVisibility.socialVisible,
+    seoVisibility.pressVisible,
+  ].filter(Boolean).length;
+
+  return {
+    brand: Math.round(computeBrandScore(brandRow)),
+    website: Math.round(computeWebsiteScore(websiteRow)),
+    visibility: Math.round((trueCount / 3) * 100),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -345,8 +398,12 @@ export async function POST(req: NextRequest) {
 
   // Parse body
   let audit_input_id: string;
+  let templateVersion: "v1" | "v2";
   try {
-    const body = (await req.json()) as { audit_input_id?: string };
+    const body = (await req.json()) as {
+      audit_input_id?: string;
+      templateVersion?: string;
+    };
     if (!body.audit_input_id) {
       return NextResponse.json(
         { error: "audit_input_id is required." },
@@ -354,6 +411,7 @@ export async function POST(req: NextRequest) {
       );
     }
     audit_input_id = body.audit_input_id;
+    templateVersion = body.templateVersion === "v2" ? "v2" : "v1";
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
@@ -406,6 +464,9 @@ export async function POST(req: NextRequest) {
     let seoVisibility: SeoVisibility;
     let snapshotResult: SnapshotResult;
     let createdAt: string;
+    // Only populated when templateVersion is "v2" — null after a cache hit
+    // whose cached synthesis predates this field (backfilled below, Step 7).
+    let signalScores: SignalScores | null = null;
 
     if (cachedRow) {
       console.log("[snapshot_agent] Cache hit — serving from dlb_snapshot_results");
@@ -413,6 +474,8 @@ export async function POST(req: NextRequest) {
       seoVisibility = cachedRow["seo_visibility"] as SeoVisibility;
       snapshotResult = cachedRow["synthesis"] as SnapshotResult;
       createdAt = String(cachedRow["created_at"] ?? new Date().toISOString());
+      const cachedSynthesis = cachedRow["synthesis"] as { signal_scores?: SignalScores } | null;
+      signalScores = cachedSynthesis?.signal_scores ?? null;
     } else {
       // ----------------------------------------------------------------
       // Cache miss: fetch all audit data and run full pipeline
@@ -491,6 +554,8 @@ export async function POST(req: NextRequest) {
         };
       }
 
+      signalScores = calculateSignalScores(websiteRow, brandRow, seoVisibility);
+
       // Step 5: Call Claude snapshot agent
 
       // Social payload — explicit context so Claude uses accurate language
@@ -563,14 +628,16 @@ export async function POST(req: NextRequest) {
       snapshotResult = parseSnapshotJson(rawText);
       createdAt = new Date().toISOString();
 
-      // Step 6: Save synthesis to cache for future requests
+      // Step 6: Save synthesis to cache for future requests. signal_scores is
+      // nested inside the existing synthesis JSONB blob (not a real column)
+      // so this needs no schema change — the v1 template ignores the extra key.
       const { error: saveError } = await supabaseAdmin
         .from("dlb_snapshot_results")
         .insert({
           audit_input_id,
           enid_score: enidScore,
           seo_visibility: seoVisibility,
-          synthesis: snapshotResult,
+          synthesis: { ...snapshotResult, signal_scores: signalScores },
           created_at: createdAt,
         });
 
@@ -583,15 +650,72 @@ export async function POST(req: NextRequest) {
     // ------------------------------------------------------------------
     // Step 7: Generate PDF and return as download
     // ------------------------------------------------------------------
-    const pdfData: SnapshotPDFData = {
-      companyName,
-      companyUrl,
-      createdAt,
-      enidScore,
-      seoVisibility,
-      snapshot: snapshotResult,
-      logoSrc: LOGO_PATH,
-    };
+
+    // v2 requested but the cached synthesis predates signal_scores — the
+    // websiteRow/brandRow fetched during the cache-miss path above are out
+    // of scope here, so re-fetch just those two for this one-time backfill.
+    if (templateVersion === "v2" && !signalScores) {
+      const [websiteResult, brandResult] = await Promise.allSettled([
+        supabaseAdmin
+          .from("dlb_website_eval_results")
+          .select("*")
+          .eq("dlb_audit_inputs_id", audit_input_id)
+          .single(),
+        supabaseAdmin
+          .from("dlb_brand_eval_results")
+          .select("*")
+          .eq("dlb_audit_input_id", audit_input_id)
+          .single(),
+      ]);
+      const websiteRow =
+        websiteResult.status === "fulfilled" && websiteResult.value.data
+          ? (websiteResult.value.data as Record<string, unknown>)
+          : null;
+      const brandRow =
+        brandResult.status === "fulfilled" && brandResult.value.data
+          ? (brandResult.value.data as Record<string, unknown>)
+          : null;
+      if (websiteRow && brandRow) {
+        signalScores = calculateSignalScores(websiteRow, brandRow, seoVisibility);
+      }
+    }
+
+    let pdfElement: React.ReactElement;
+    if (templateVersion === "v2") {
+      const scores = signalScores ?? { brand: 0, website: 0, visibility: 0 };
+      const v2Data: SnapshotV2Data = {
+        companyName,
+        companyUrl,
+        createdAt,
+        overallScore: enidScore,
+        whatEnidFound: snapshotResult.what_enid_found,
+        leaks: snapshotResult.top_5_brand_value_leaks.map((l) => ({
+          title: l.issue,
+          why: l.impact,
+        })),
+        signals: [
+          { title: "Brand Signal", score: scores.brand, body: snapshotResult.brand_signal_snapshot },
+          { title: "Website Signal", score: scores.website, body: snapshotResult.website_signal_snapshot },
+          { title: "Visibility Signal", score: scores.visibility, body: snapshotResult.visibility_snapshot },
+        ],
+        fixFirst: [...snapshotResult.what_to_fix_first]
+          .sort((a, b) => a.priority - b.priority)
+          .map((f) => f.action),
+        recommendedNextStep: snapshotResult.recommended_next_step,
+      };
+      pdfElement = React.createElement(SnapshotDocumentV2, { data: v2Data });
+    } else {
+      const pdfData: SnapshotPDFData = {
+        companyName,
+        companyUrl,
+        createdAt,
+        enidScore,
+        seoVisibility,
+        snapshot: snapshotResult,
+        logoSrc: LOGO_PATH,
+      };
+      pdfElement = React.createElement(SnapshotDocument, { data: pdfData });
+    }
 
     let pdfBytes: Uint8Array;
     try {
@@ -599,10 +723,7 @@ export async function POST(req: NextRequest) {
       // a Node.js Readable stream, or a Web ReadableStream depending on the
       // runtime environment. We handle all three cases.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawPdf: unknown = await pdf(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        React.createElement(SnapshotDocument, { data: pdfData }) as any
-      ).toBuffer();
+      const rawPdf: unknown = await pdf(pdfElement as any).toBuffer();
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = rawPdf as any;

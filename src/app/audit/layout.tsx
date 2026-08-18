@@ -14,7 +14,7 @@ import { HEALTH_BAR_SEGMENTS, SCORE_LEGEND } from "@/lib/scoring";
 function AuditContent({ children }: { children: ReactNode }) {
   const base = "/audit";
   const [openHelp, setOpenHelp] = useState(false);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotLoading, setSnapshotLoading] = useState<"v1" | "v2" | null>(null);
   const { audit, loading, error, pendingSections } = useAudit();
   const pathname = usePathname();
   const router = useRouter();
@@ -25,14 +25,14 @@ function AuditContent({ children }: { children: ReactNode }) {
    * Calls the snapshot agent API, receives a PDF blob, and triggers a browser
    * download. Disabled while agents are still running or a request is in flight.
    */
-  async function handleSnapshot() {
+  async function handleSnapshot(templateVersion: "v1" | "v2" = "v1") {
     if (!auditId || snapshotLoading) return;
-    setSnapshotLoading(true);
+    setSnapshotLoading(templateVersion);
     try {
       const res = await fetch("/api/snapshot_agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audit_input_id: auditId }),
+        body: JSON.stringify({ audit_input_id: auditId, templateVersion }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -42,7 +42,8 @@ function AuditContent({ children }: { children: ReactNode }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${audit.companyName ?? "enid"}-snapshot.pdf`;
+      const suffix = templateVersion === "v2" ? "-snapshot-v2" : "-snapshot";
+      link.download = `${audit.companyName ?? "enid"}${suffix}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -51,7 +52,7 @@ function AuditContent({ children }: { children: ReactNode }) {
       console.error("[snapshot] download failed:", err);
       alert(err instanceof Error ? err.message : "Snapshot generation failed. Please try again.");
     } finally {
-      setSnapshotLoading(false);
+      setSnapshotLoading(null);
     }
   }
 
@@ -119,17 +120,34 @@ function AuditContent({ children }: { children: ReactNode }) {
               </button>
               <button
                 type="button"
-                onClick={handleSnapshot}
-                disabled={snapshotLoading || pendingSections.length > 0 || loading}
+                onClick={() => handleSnapshot("v1")}
+                disabled={!!snapshotLoading || pendingSections.length > 0 || loading}
                 className="flex items-center justify-center gap-2 rounded-md border border-[#25394b] bg-[#25394b] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1c2e3d] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {snapshotLoading ? (
+                {snapshotLoading === "v1" ? (
                   <>
                     <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
                     Generating…
                   </>
                 ) : (
                   "Download Snapshot"
+                )}
+              </button>
+              {/* Admin-only testing affordance for the new client-supplied
+                  template — remove once v2 is approved and promoted to default. */}
+              <button
+                type="button"
+                onClick={() => handleSnapshot("v2")}
+                disabled={!!snapshotLoading || pendingSections.length > 0 || loading}
+                className="flex items-center justify-center gap-2 rounded-md border border-[#25394b] bg-white px-3 py-1.5 text-sm font-medium text-[#25394b] hover:bg-[#25394b]/5 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {snapshotLoading === "v2" ? (
+                  <>
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#25394b] border-t-transparent" />
+                    Generating…
+                  </>
+                ) : (
+                  "Preview New Template"
                 )}
               </button>
             </div>
